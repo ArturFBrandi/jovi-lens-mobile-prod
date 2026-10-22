@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Icon from './Icon.jsx';
-import AiErrorActions from './AiErrorActions.jsx';
-import { requireAI } from '../services/aiAccess.js';
-import { ApiError, asAiError } from '../services/apiErrors.js';
 import { generateSubjectContent } from '../services/subjectStudy.js';
 import { narration } from '../services/audio.js';
 
@@ -12,10 +9,10 @@ import { narration } from '../services/audio.js';
 // see react-native-migration-plan.md's Tier 3 decision. This screen is a
 // narrated slide lesson, without generated-video dependencies.
 
-export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
+export default function LessonPlayer({ subject, saved, onSave }) {
   const [phase, setPhase] = useState(saved ? 'ready' : 'idle');
   const [script, setScript] = useState(saved || null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [mode, setMode] = useState('idle'); // idle | intro | slides
   const [playing, setPlaying] = useState({ index: 0, state: 'idle' });
   const titleTimerRef = useRef(null);
@@ -27,10 +24,7 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
     narration.start(
       script.slides.map((slide) => ({ speaker: 'narrator', text: slide.narration || slide.heading })),
       {
-        onUpdate: (update) => {
-          setPlaying({ index: update.superseded ? 0 : update.index, state: update.superseded ? 'idle' : update.state });
-          if (update.error) setError(new ApiError({ code: update.errorCode, message: update.error }));
-        },
+        onUpdate: (update) => setPlaying({ index: update.superseded ? 0 : update.index, state: update.superseded ? 'idle' : update.state }),
         onEnd: () => { setPlaying({ index: 0, state: 'idle' }); setMode('idle'); },
       },
     );
@@ -51,9 +45,8 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
   }, [beginNarration, mode]);
 
   async function generate() {
-    if (!requireAI()) return;
     setPhase('loading');
-    setError(null);
+    setError('');
     narration.stop();
     clearTimeout(titleTimerRef.current);
     setMode('idle');
@@ -67,7 +60,7 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
       onSave?.(result);
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(asAiError(err, 'Falha ao gerar a aula.'));
+      setError(err.message || 'Falha ao gerar a aula.');
       setPhase('idle');
     }
   }
@@ -75,7 +68,6 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
   // The [mode] effect handles title-card timing before narration starts.
   function play() {
     if (!script?.slides?.length) return;
-    setError(null);
     setPlaying({ index: 0, state: 'playing' });
     setMode('intro');
   }
@@ -107,12 +99,7 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
           <Text className="text-[16px] font-bold text-slate-900">Aula personalizada de {subject.name}</Text>
           <Text className="text-[13px] text-slate-600">Slides narrados a partir das suas notas, com title card e tópicos para acompanhar sem depender de vídeo gerado.</Text>
         </View>
-        {error ? (
-          <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-            <Text className="text-[13px] text-red-600">{error.message}</Text>
-            <AiErrorActions error={error} onRetry={generate} onNavigateAway={onLeave} />
-          </View>
-        ) : null}
+        {error ? <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert"><Text className="text-[13px] text-red-600">{error}</Text></View> : null}
         <Pressable accessibilityRole="button" onPress={generate} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
           <Icon name="film" size={16} color="#ffffff" />
           <Text className="text-[14px] font-semibold text-white">Gerar vídeo aula</Text>
@@ -153,13 +140,6 @@ export default function LessonPlayer({ subject, saved, onSave, onLeave }) {
       <View className="h-1.5 overflow-hidden rounded-full bg-slate-100">
         <View className="h-1.5 rounded-full bg-indigo-600" style={{ width: `${((Math.max(0, playing.index) + 1) / script.slides.length) * 100}%` }} />
       </View>
-
-      {error ? (
-        <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-          <Text className="text-[13px] text-red-600">{error.message}</Text>
-          <AiErrorActions error={error} onRetry={play} onNavigateAway={onLeave} />
-        </View>
-      ) : null}
 
       <View className="flex-row items-center gap-3">
         {mode === 'intro' ? (

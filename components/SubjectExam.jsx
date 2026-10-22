@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Icon from './Icon.jsx';
-import AiErrorActions from './AiErrorActions.jsx';
-import { requireAI } from '../services/aiAccess.js';
-import { asAiError } from '../services/apiErrors.js';
 import { generateSubjectContent } from '../services/subjectStudy.js';
 import { DEMO_SUBJECT_ARTIFACTS } from '../shared/demoSubjectArtifacts.js';
 import { buildExamReport } from '../shared/studentDashboard.js';
@@ -25,10 +22,10 @@ function computeByTopic(questions, answers) {
   return byTopic;
 }
 
-export default function SubjectExam({ subject, savedExam, savedResult, onResult, presentation = false, onLeave }) {
+export default function SubjectExam({ subject, savedExam, savedResult, onResult, presentation = false }) {
   const [phase, setPhase] = useState('idle'); // idle | loading | running | done
   const [exam, setExam] = useState(null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
@@ -85,7 +82,7 @@ export default function SubjectExam({ subject, savedExam, savedResult, onResult,
   function run(examData) {
     clearInterval(timerRef.current);
     clearTimeout(generationTimeoutRef.current);
-    setError(null);
+    setError('');
     setAnswers({});
     answersRef.current = {};
     finishedRef.current = false;
@@ -103,17 +100,16 @@ export default function SubjectExam({ subject, savedExam, savedResult, onResult,
   }
 
   async function generateNew() {
-    if (!requireAI()) return;
     setPhase('loading');
     setLoadingLabel(`Gerando novo simulado de ${subject.name}...`);
-    setError(null);
+    setError('');
     try {
       const generated = await generateSubjectContent(subject, { action: 'exam' });
       if (!mountedRef.current) return; // unmounted during the request — don't start a leaked timer
       if (!generated.questions?.length) throw new Error('Não foi possível montar o simulado agora.');
       run(generated);
     } catch (err) {
-      setError(asAiError(err, 'Falha ao gerar o simulado.'));
+      setError(err.message || 'Falha ao gerar o simulado.');
       setPhase('idle');
     }
   }
@@ -182,12 +178,7 @@ export default function SubjectExam({ subject, savedExam, savedResult, onResult,
             <Text className="text-[13px] text-slate-600">Último resultado: <Text className="font-bold text-slate-900">{savedResult.percent}%</Text> ({savedResult.score}/{savedResult.total})</Text>
           </View>
         ) : null}
-        {error ? (
-          <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-            <Text className="text-[13px] text-red-600">{error.message}</Text>
-            <AiErrorActions error={error} onRetry={generateNew} onNavigateAway={onLeave} />
-          </View>
-        ) : null}
+        {error ? <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert"><Text className="text-[13px] text-red-600">{error}</Text></View> : null}
         {savedResult ? (
           <Pressable accessibilityRole="button" onPress={openReadyResult} className="flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-3">
             <Icon name="history" size={16} color="#475569" />

@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
 import {
   deleteMediaRecord,
   clearMediaRecords,
@@ -8,6 +7,7 @@ import {
   getHistory,
   getLearningPreferences,
   getNotes,
+  getPlan,
   getStudyCalendar,
   getSubjectArtifacts,
   getUser,
@@ -16,6 +16,7 @@ import {
   setHistory as persistHistory,
   setLearningPreferences as persistLearningPreferences,
   setNotes as persistNotes,
+  setPlan as persistPlan,
   setStudyCalendar as persistStudyCalendar,
   setSubjectArtifacts as persistSubjectArtifacts,
   setUser as persistUser,
@@ -25,17 +26,9 @@ import { aggregateSubjects } from '../shared/subjects.js';
 import { mergeDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
 import { EMPTY_STUDY_CALENDAR, normalizeStudyCalendar } from '../shared/studyCalendar.js';
 import { demoAssetModule } from '../services/demoAssets.js';
-import { isDemoMode } from '../services/env.js';
-import { subscribeUser } from '../services/googleAuth.js';
-import { syncExamReminders } from '../services/notifications.js';
-import { shouldAutoSync, subjectNamesFrom, syncCalendar } from '../services/calendarSync.js';
-import { mergeSeedNotes, sampleMedia, sampleNotes, sampleRecords, studyAssets } from '../shared/seedLibrary.js';
+import { mergeSeedNotes, sampleMedia, sampleNotes, sampleRecords as samples, studyAssets } from '../shared/seedLibrary.js';
 
 const AppDataContext = createContext(null);
-
-// Samples, seeded notes and demo artifacts exist only in the presentation build.
-const DEMO = isDemoMode();
-const samples = DEMO ? sampleRecords : [];
 
 // These paths and the require() keys in services/demoAssets.js are two hand-kept
 // lists that must agree. A mismatch degrades silently — the image just falls back
@@ -50,7 +43,6 @@ if (__DEV__) {
 }
 
 function getInitialNotes() {
-  if (!DEMO) return getNotes();
   const stored = getNotes();
   const { notes, changed } = mergeSeedNotes(stored, getDismissedSeedNotes());
   if (changed) persistNotes(notes);
@@ -58,7 +50,6 @@ function getInitialNotes() {
 }
 
 function getInitialSubjectArtifacts() {
-  if (!DEMO) return getSubjectArtifacts();
   const { artifacts, changed } = mergeDemoSubjectArtifacts(getSubjectArtifacts());
   if (changed) persistSubjectArtifacts(artifacts);
   return artifacts;
@@ -88,14 +79,11 @@ export function AppDataProvider({ children }) {
     persistHistory(cleaned);
     return cleaned;
   });
+  const [plan, setPlanState] = useState(() => getPlan());
   const [user, setUserState] = useState(() => getUser());
   const [subjectArtifacts, setSubjectArtifactsState] = useState(getInitialSubjectArtifacts);
   const [learningPreferences, setLearningPreferencesState] = useState(() => getLearningPreferences());
   const [studyCalendar, setStudyCalendarState] = useState(() => normalizeStudyCalendar(getStudyCalendar() || EMPTY_STUDY_CALENDAR));
-
-  // Sign-in, sign-out and session recovery happen outside React (services/
-  // googleAuth.js); mirror the signed-in user here.
-  useEffect(() => subscribeUser((next) => setUserState(next)), []);
 
   useEffect(() => {
     const loadVersion = recordsLoadVersionRef.current;
@@ -267,6 +255,11 @@ export function AppDataProvider({ children }) {
 
   const toggleNoteFavorite = useCallback((id) => commitNotes(notesRef.current.map((note) => note.id === id ? { ...note, favorite: !note.favorite } : note)), [commitNotes]);
 
+  const setPlan = useCallback((next) => {
+    setPlanState(next);
+    persistPlan(next);
+  }, []);
+
   const setUser = useCallback((next) => {
     setUserState(next);
     persistUser(next);
@@ -282,7 +275,6 @@ export function AppDataProvider({ children }) {
     const calendar = normalizeStudyCalendar(next || EMPTY_STUDY_CALENDAR);
     setStudyCalendarState(calendar);
     persistStudyCalendar(calendar);
-    syncExamReminders(calendar).catch(() => {});
   }, []);
 
   const restoreLocalData = useCallback(async (backup) => {
@@ -299,6 +291,8 @@ export function AppDataProvider({ children }) {
     commitNotes(backup.notes || []);
     setAiHistory(backup.aiHistory || []);
     persistHistory(backup.aiHistory || []);
+    setPlanState(backup.plan || { type: 'free' });
+    persistPlan(backup.plan || { type: 'free' });
     setUserState(backup.user || null);
     persistUser(backup.user || null);
     setSubjectArtifactsState(backup.subjectArtifacts || {});
@@ -314,12 +308,14 @@ export function AppDataProvider({ children }) {
     recordsRef.current = samples;
     setRecords(samples);
     setDismissedSeedNotes([]);
-    commitNotes(DEMO ? sampleNotes : []);
+    commitNotes(sampleNotes);
     setAiHistory([]);
     persistHistory([]);
+    setPlanState({ type: 'free' });
+    persistPlan({ type: 'free' });
     setUserState(null);
     persistUser(null);
-    const artifacts = DEMO ? mergeDemoSubjectArtifacts({}).artifacts : {};
+    const { artifacts } = mergeDemoSubjectArtifacts({});
     setSubjectArtifactsState(artifacts);
     persistSubjectArtifacts(artifacts);
     setLearningPreferencesState(DEFAULT_LEARNING_PREFERENCES);
@@ -331,28 +327,6 @@ export function AppDataProvider({ children }) {
   // Matérias derived from saved notes (category → subthemes + note bodies).
   // Uncategorized notes fall under "Outros", matching how SubjectNotes groups them.
   const subjects = useMemo(() => aggregateSubjects(notes), [notes]);
-
-  // Exam reminders are reconciled on every launch (the calendar may have
-  // changed while the app was closed). Works off the demo calendar too.
-  useEffect(() => {
-    syncExamReminders(normalizeStudyCalendar(getStudyCalendar() || EMPTY_STUDY_CALENDAR)).catch(() => {});
-  }, []);
-
-  // Read-only Google calendar: re-sync when the app comes back to the
-  // foreground, at most every 15 minutes, and only while signed in.
-  const autoSyncRef = useRef(null);
-  useEffect(() => {
-    autoSyncRef.current = () => {
-      if (DEMO || !user || !shouldAutoSync()) return;
-      syncCalendar({ subjectNames: subjectNamesFrom(subjects), setStudyCalendar }).catch(() => {});
-    };
-  }, [user, subjects, setStudyCalendar]);
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') autoSyncRef.current?.();
-    });
-    return () => subscription.remove();
-  }, []);
 
   // Persists one generated artifact (plan/exam/script/examResult) for a matéria.
   const saveSubjectArtifact = useCallback((subjectName, key, data) => {
@@ -366,9 +340,9 @@ export function AppDataProvider({ children }) {
   const getSubjectArtifact = useCallback((subjectName, key) => subjectArtifacts[subjectName]?.[key] || null, [subjectArtifacts]);
 
   const value = useMemo(() => ({
-    records, notes, aiHistory, user, subjects, subjectArtifacts, learningPreferences, studyCalendar,
-    addRecord, updateRecord, removeRecord, saveNote, removeNote, updateNote, toggleNoteFavorite, addHistoryEntry, setUser, setLearningPreferences, setStudyCalendar, restoreLocalData, clearLocalData, saveSubjectArtifact, getSubjectArtifact,
-  }), [records, notes, aiHistory, user, subjects, subjectArtifacts, learningPreferences, studyCalendar, addRecord, updateRecord, removeRecord, saveNote, removeNote, updateNote, toggleNoteFavorite, addHistoryEntry, setUser, setLearningPreferences, setStudyCalendar, restoreLocalData, clearLocalData, saveSubjectArtifact, getSubjectArtifact]);
+    records, notes, aiHistory, plan, user, subjects, subjectArtifacts, learningPreferences, studyCalendar,
+    addRecord, updateRecord, removeRecord, saveNote, removeNote, updateNote, toggleNoteFavorite, addHistoryEntry, setPlan, setUser, setLearningPreferences, setStudyCalendar, restoreLocalData, clearLocalData, saveSubjectArtifact, getSubjectArtifact,
+  }), [records, notes, aiHistory, plan, user, subjects, subjectArtifacts, learningPreferences, studyCalendar, addRecord, updateRecord, removeRecord, saveNote, removeNote, updateNote, toggleNoteFavorite, addHistoryEntry, setPlan, setUser, setLearningPreferences, setStudyCalendar, restoreLocalData, clearLocalData, saveSubjectArtifact, getSubjectArtifact]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

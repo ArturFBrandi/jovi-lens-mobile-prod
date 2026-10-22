@@ -1,90 +1,62 @@
-// Native Google sign-in (original API of @react-native-google-signin). The
-// Google id_token is exchanged once at /api/auth/google for an app session;
-// when that session expires the client re-runs a silent Google sign-in.
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isNoSavedCredentialFoundResponse,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
-import { apiRequest } from './apiClient.js';
-import { loadByok, refresh, reset, setCredits } from './aiAccess.js';
-import { isDemoMode } from './env.js';
-import { setSessionToken, setUser } from './storage.js';
+import { useState } from 'react';
+import * as AuthSession from 'expo-auth-session';
+import { apiFetch } from './apiClient.js';
+import { setSessionToken } from './storage.js';
 
-if (!isDemoMode()) GoogleSignin.configure({ webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID });
+// Browser-based OAuth (expo-auth-session), not the native Google Sign-In SDK
+// Google has deprecated in favor of Android Credential Manager — that native
+// path needs a config plugin, an EAS development build, and an Android OAuth
+// client with the app's keystore SHA-1 registered, none of which exist yet.
+// This flow requests an id_token directly via the OpenID Connect implicit
+// flow, so there is no code-exchange step and therefore no client secret to
+// protect on-device — see auth-plan.md Phase 2 for the full writeup and what
+// to try in Google Cloud Console for EXPO_PUBLIC_GOOGLE_CLIENT_ID. Not
+// verified against a live Google consent screen — no way to click through
+// OAuth in this environment; test the actual round trip once a client id is
+// set.
+const discovery = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
 
-// AppDataContext mirrors the signed-in user; it subscribes here so sign-in
-// from anywhere (profile, the sign-in prompt, session recovery) updates it.
-const userListeners = new Set();
+export function useGoogleSignIn() {
+  const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+  const [nonce] = useState(() => `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`);
+  const [request, , promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId,
+      redirectUri: AuthSession.makeRedirectUri({ scheme: 'jovilens' }),
+      responseType: AuthSession.ResponseType.IdToken,
+      scopes: ['openid', 'profile', 'email'],
+      extraParams: { nonce },
+    },
+    discovery
+  );
 
-export function subscribeUser(listener) {
-  userListeners.add(listener);
-  return () => userListeners.delete(listener);
-}
+  async function signIn() {
+    if (!clientId) throw new Error('Login com Google ainda não está configurado.');
+    const result = await promptAsync();
+    if (result.type === 'dismiss' || result.type === 'cancel') return null;
+    if (result.type !== 'success') throw new Error('Não foi possível entrar com o Google.');
+    const idToken = result.params?.id_token;
+    if (!idToken) throw new Error('O Google não retornou uma credencial válida.');
 
-function applyUser(user) {
-  setUser(user);
-  userListeners.forEach((listener) => listener(user));
-}
-
-async function exchange(idToken) {
-  const res = await apiRequest('/api/auth/google', { body: { credential: idToken }, useByok: false, recover: false });
-  setSessionToken(res.session || null);
-  setCredits(res.creditsRemaining);
-  return res.user;
-}
-
-// Resolves to the signed-in user, or null when the user cancelled.
-export async function signIn() {
-  try {
-    await GoogleSignin.hasPlayServices();
-    const response = await GoogleSignin.signIn();
-    if (!isSuccessResponse(response)) return null;
-    const user = await exchange(response.data.idToken);
-    applyUser(user);
-    await loadByok();
-    refresh();
-    return user;
-  } catch (error) {
-    if (error?.name === 'ApiError') throw error;
-    if (isErrorWithCode(error)) {
-      if (error.code === statusCodes.IN_PROGRESS) return null;
-      if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) throw new Error('Atualize o Google Play Services para entrar.');
-    }
-    throw new Error('Não foi possível entrar com o Google.');
+    const response = await apiFetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // The server checks this against the id_token's nonce claim — it binds the
+      // token to this sign-in (injection guard); replay is blocked server-side.
+      body: JSON.stringify({ credential: idToken, nonce }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || 'Não foi possível entrar com o Google.');
+    setSessionToken(payload.session || null);
+    return payload.user;
   }
+
+  return { signIn, configured: Boolean(clientId), ready: Boolean(request) };
 }
 
-// Silent re-sign-in after the app session expires. Never recurses into
-// apiClient's own session recovery.
-export async function refreshSession() {
-  try {
-    const response = await GoogleSignin.signInSilently();
-    if (isNoSavedCredentialFoundResponse(response)) return false;
-    const user = await exchange(response.data.idToken);
-    applyUser(user);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Clears the local session without touching Google (used when recovery fails).
-export function signOutLocal() {
+export function signOutGoogle() {
   setSessionToken(null);
-  applyUser(null);
-  reset();
-}
-
-// BYOK keys stay in secure store under the account, so signing back in with
-// the same Google account brings the key back.
-export async function signOut() {
-  try {
-    await GoogleSignin.signOut();
-  } catch {
-    // Ignore: the local sign-out below is what matters.
-  }
-  signOutLocal();
 }

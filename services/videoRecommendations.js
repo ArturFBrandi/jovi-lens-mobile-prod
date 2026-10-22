@@ -1,5 +1,5 @@
 import { isDemoMode } from './env.js';
-import { apiRequest } from './apiClient.js';
+import { apiFetch } from './apiClient.js';
 
 const DEMO_STYLE_LABELS = {
   animated: 'animada e visual',
@@ -60,8 +60,19 @@ function demoRecommendations(subject, preferences = {}) {
 export async function findVideoLessons(subject, preferences) {
   if (isDemoMode()) return demoRecommendations(subject, preferences);
 
-  return apiRequest('/api/video-recommendations', {
-    body: { subject, preferences },
-    idempotent: true,
-  });
+  let response;
+  try {
+    response = await apiFetch('/api/video-recommendations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, preferences }),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw error;
+    throw new Error('Sem conexão para recomendar aulas agora. Confira a internet ou ative o modo demonstração.');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Não foi possível recomendar uma aula agora.');
+  return data;
 }

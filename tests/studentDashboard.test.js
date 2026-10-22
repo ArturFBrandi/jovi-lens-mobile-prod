@@ -164,7 +164,6 @@ test('dashboard final report summarizes strengths, gaps and next plan', () => {
 
 test('dashboard smart notifications include exam, daily review and drive audio', () => {
   const dashboard = buildStudentDashboard({
-    presentation: true,
     subjects: [historySubject],
     subjectArtifacts: DEMO_SUBJECT_ARTIFACTS,
     studyCalendar: createDemoOutlookCalendar(now),
@@ -219,19 +218,4 @@ test('before/after compares the first and latest real exam attempts', () => {
   assert.equal(dashboard.comparison.before, 40);
   assert.equal(dashboard.comparison.after, 71);
   assert.equal(dashboard.comparison.delta, 31);
-});
-
-test('real builds: no subjects → { empty: true }', () => {
-  assert.deepEqual(buildStudentDashboard({ subjects: [], subjectArtifacts: DEMO_SUBJECT_ARTIFACTS, studyCalendar: {}, now }), { empty: true });
-});
-
-test('real builds: notifications drop the static drive-audio card', () => {
-  const dashboard = buildStudentDashboard({
-    subjects: [historySubject],
-    subjectArtifacts: {},
-    studyCalendar: createDemoOutlookCalendar(now),
-    now,
-  });
-  assert.ok(!dashboard.notifications.some((item) => item.id === 'audio-drive'));
-  assert.equal(dashboard.notifications[0].id, 'exam-reminder');
 });

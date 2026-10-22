@@ -88,8 +88,6 @@ export function buildStudentDashboard({
   now = new Date(),
 } = {}) {
   const calendar = normalizeStudyCalendar(studyCalendar);
-  // Real builds with no notes show an empty state instead of demo subjects.
-  if (!presentation && !subjects.length) return { empty: true };
   const knownSubjects = subjects.length
     ? subjects
     : FALLBACK_SUBJECTS.map((name) => ({ name, count: 0, subthemes: [], notes: [] }));
@@ -160,7 +158,7 @@ export function buildStudentDashboard({
   const readiness = buildReadinessStatus({ urgentSubject, nextExam, now });
   const audioBriefing = buildAudioBriefing({ today, readiness, urgentSubject, nextExam, now });
   const subjectAlert = buildSubjectAlert(ranking);
-  const notifications = buildSmartNotifications({ today, readiness, urgentSubject, nextExam, ranking, now, presentation });
+  const notifications = buildSmartNotifications({ today, readiness, urgentSubject, nextExam, ranking, now });
   const finalReport = buildFinalStudentReport({ urgentSubject, nextExam, readiness, flashcards, weeklyPlan, ranking, now });
 
   return {
@@ -196,11 +194,9 @@ export function buildSmartNotifications({
   nextExam = null,
   ranking = [],
   now = new Date(),
-  presentation = false,
 } = {}) {
-  const subject = today.subject || urgentSubject?.name || nextExam?.subject || (presentation ? 'História' : '');
+  const subject = today.subject || urgentSubject?.name || nextExam?.subject || 'História';
   const topic = today.topic || urgentSubject?.weakTopics?.[0]?.topic || nextExam?.topics?.[0] || subject;
-  if (!presentation && !subject && !topic && !nextExam) return [];
   const days = nextExam ? daysUntilEvent(nextExam, now) : null;
   const riskSubject = ranking.find((item) => item.risk === 'Risco de prova' || item.risk === 'Revisar');
   const notifications = [];
@@ -227,7 +223,7 @@ export function buildSmartNotifications({
     when: 'Agora',
   });
 
-  if (presentation) notifications.push({
+  notifications.push({
     id: 'audio-drive',
     tone: 'drive',
     label: 'No caminho',

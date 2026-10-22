@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Icon from './Icon.jsx';
-import AiErrorActions from './AiErrorActions.jsx';
-import { requireAI } from '../services/aiAccess.js';
-import { ApiError, asAiError } from '../services/apiErrors.js';
 import { generateSubjectContent } from '../services/subjectStudy.js';
 import { narration } from '../services/audio.js';
-import { isDemoMode } from '../services/env.js';
+import { useAppData } from '../context/AppDataContext.jsx';
 
 // Spoken Portuguese runs ~150 words a minute; the estimate is what a student
 // sees, so it has to match the audio (the seeded pitch episode claims 10 min
@@ -23,21 +20,21 @@ const FORMAT_LABEL = {
   drive: 'No carro · mãos livres',
 };
 
-export default function PodcastPlayer({ subject, saved, savedVariants = null, onSave, onLeave }) {
+export default function PodcastPlayer({ subject, saved, savedVariants = null, onSave }) {
   const initialFormat = saved?.format || (savedVariants?.dialogue ? 'dialogue' : Object.keys(savedVariants || {})[0]) || 'dialogue';
   const [format, setFormat] = useState(initialFormat);
   const [script, setScript] = useState(savedVariants?.[initialFormat] || saved || null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const { plan } = useAppData();
   const [playback, setPlayback] = useState({ index: -1, state: 'idle', mode: null, waiting: false });
   const [coachAnswers, setCoachAnswers] = useState({});
 
   useEffect(() => () => narration.stop(), []);
 
   async function generate(nextFormat = format) {
-    if (!requireAI()) return;
     setLoading(true);
-    setError(null);
+    setError('');
     narration.stop();
     setPlayback({ index: -1, state: 'idle', mode: null, waiting: false });
     try {
@@ -49,7 +46,7 @@ export default function PodcastPlayer({ subject, saved, savedVariants = null, on
       setCoachAnswers({});
       onSave?.(result);
     } catch (err) {
-      setError(asAiError(err, 'Falha ao gerar o podcast.'));
+      setError(err.message || 'Falha ao gerar o podcast.');
     } finally {
       setLoading(false);
     }
@@ -65,17 +62,13 @@ export default function PodcastPlayer({ subject, saved, savedVariants = null, on
     setFormat(next);
     setScript(savedVariants?.[next] || ((saved?.format || 'dialogue') === next ? saved : null));
     setCoachAnswers({});
-    setError(null);
+    setError('');
   }
 
   function playFrom(index = 0) {
     if (!script?.segments?.length) return;
-    setError(null);
     narration.start(script.segments, {
-      onUpdate: (u) => {
-        setPlayback({ index: u.index, state: u.state, mode: u.mode, waiting: Boolean(u.waiting) });
-        if (u.error) setError(new ApiError({ code: u.errorCode, message: u.error }));
-      },
+      onUpdate: (u) => setPlayback({ index: u.index, state: u.state, mode: u.mode, waiting: Boolean(u.waiting) }),
       onEnd: () => setPlayback({ index: -1, state: 'idle', mode: null, waiting: false }),
     }, index);
   }
@@ -106,12 +99,7 @@ export default function PodcastPlayer({ subject, saved, savedVariants = null, on
           <Text className="text-[13px] text-slate-600">Transformamos suas notas em episódio. O modo No carro organiza a revisão para ouvir sem olhar para a tela.</Text>
         </View>
         <FormatChooser format={format} onChoose={chooseFormat} />
-        {error ? (
-          <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-            <Text className="text-[13px] text-red-600">{error.message}</Text>
-            <AiErrorActions error={error} onRetry={() => generate()} onNavigateAway={onLeave} />
-          </View>
-        ) : null}
+        {error ? <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert"><Text className="text-[13px] text-red-600">{error}</Text></View> : null}
         <Pressable accessibilityRole="button" onPress={() => generate()} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
           <Icon name="waveform" size={16} color="#ffffff" />
           <Text className="text-[14px] font-semibold text-white">Gerar podcast</Text>
@@ -129,16 +117,9 @@ export default function PodcastPlayer({ subject, saved, savedVariants = null, on
         <View className="flex-1 gap-0.5">
           <Text className="text-[11px] text-indigo-500">{FORMAT_LABEL[script.format || format] || FORMAT_LABEL.dialogue}</Text>
           <Text className="text-[15px] font-bold text-slate-900" numberOfLines={2}>{script.title}</Text>
-          <Text className="text-[11px] text-slate-500">Aprox. {isDemoMode() && script.durationMinutes ? script.durationMinutes : estimateMinutes(script.segments)} min</Text>
+          <Text className="text-[11px] text-slate-500">Aprox. {plan?.presentationMode && script.durationMinutes ? script.durationMinutes : estimateMinutes(script.segments)} min</Text>
         </View>
       </View>
-
-      {error ? (
-        <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-          <Text className="text-[13px] text-red-600">{error.message}</Text>
-          <AiErrorActions error={error} onRetry={() => playFrom(currentIndex)} onNavigateAway={onLeave} />
-        </View>
-      ) : null}
 
       {script.format === 'drive' ? (
         <View className="gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 p-3">

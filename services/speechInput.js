@@ -2,11 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import { ExpoSpeechRecognitionModule, ExpoWebSpeechRecognition } from 'expo-speech-recognition';
 import { isDemoMode } from './env.js';
-import { apiRequest } from './apiClient.js';
-import { byokHasStt } from './aiAccess.js';
-
-// Keeps a server recording under /api/transcribe's 3.5 MB base64 limit.
-const MAX_SERVER_RECORDING_MS = 90_000;
+import { apiFetch } from './apiClient.js';
 
 export function speechRecognitionAvailable() {
   try {
@@ -16,10 +12,16 @@ export function speechRecognitionAvailable() {
   }
 }
 
-// The server transcription path needs the user's own key with a provider that
-// offers speech-to-text; free users only get on-device recognition.
+// expo-audio's recorder is always present in a native build — the web
+// version's feature detection (MediaRecorder + getUserMedia) has no RN
+// equivalent; availability here is purely a matter of runtime permission,
+// checked when recording actually starts.
+export function mediaRecorderAvailable() {
+  return true;
+}
+
 export function voiceInputAvailable() {
-  return speechRecognitionAvailable() || (!isDemoMode() && byokHasStt());
+  return speechRecognitionAvailable() || (!isDemoMode() && mediaRecorderAvailable());
 }
 
 function pendingController(starter, handlers) {
@@ -82,11 +84,9 @@ async function startServerRecording({ onFinal, onError, onEnd, onState }) {
   onState?.('recording');
 
   let finished = false;
-  let autoStop = null;
   const finish = async () => {
     if (finished) return;
     finished = true;
-    clearTimeout(autoStop);
     await recorder.stop();
     // Leaving the session in recording mode routes iOS playback to the earpiece.
     setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
@@ -96,7 +96,13 @@ async function startServerRecording({ onFinal, onError, onEnd, onState }) {
       const base64 = await FileSystem.readAsStringAsync(recorder.uri, { encoding: FileSystem.EncodingType.Base64 });
       // RecordingPresets.HIGH_QUALITY writes an .m4a (AAC/MPEG4) file on both
       // platforms — matches one of api/transcribe.js's accepted mime types.
-      const data = await apiRequest('/api/transcribe', { body: { audio: base64, mimeType: 'audio/m4a' } });
+      const response = await apiFetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64, mimeType: 'audio/m4a' }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'Não foi possível transcrever.');
       onFinal?.(data.text || '');
     } catch (error) {
       onError?.(error.message || 'Falha ao transcrever.');
@@ -105,7 +111,6 @@ async function startServerRecording({ onFinal, onError, onEnd, onState }) {
     }
   };
 
-  autoStop = setTimeout(() => { finish(); }, MAX_SERVER_RECORDING_MS);
   return { stop: () => { finish(); } };
 }
 
@@ -113,7 +118,7 @@ async function startServerRecording({ onFinal, onError, onEnd, onState }) {
 // while the async microphone permission is still resolving.
 export function startVoiceInput(handlers = {}) {
   if (speechRecognitionAvailable()) return pendingController(startDeviceRecognition, handlers);
-  if (!isDemoMode() && byokHasStt()) return pendingController(startServerRecording, handlers);
+  if (!isDemoMode() && mediaRecorderAvailable()) return pendingController(startServerRecording, handlers);
   handlers.onError?.('Entrada por voz indisponível neste dispositivo.');
   handlers.onEnd?.();
   return { stop() {} };

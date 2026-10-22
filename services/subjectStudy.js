@@ -1,7 +1,7 @@
 import { getSubjectDemo } from '../shared/demoResponses.js';
 import { gradeAgainstModel } from '../shared/answerGrading.js';
 import { isDemoMode } from './env.js';
-import { apiRequest } from './apiClient.js';
+import { apiFetch } from './apiClient.js';
 import { getLearningPreferences, getStudyCalendar } from './storage.js';
 import { eventsForSubject, normalizeStudyCalendar } from '../shared/studyCalendar.js';
 
@@ -28,10 +28,21 @@ export async function generateSubjectContent(subject, { action, format } = {}) {
     return { ...getSubjectDemo({ action, subject: payloadSubject, preferences }), provider: 'demo', model: 'jovi-lens-demo', mode: 'demo' };
   }
 
-  return apiRequest('/api/subject-ai', {
-    body: { action, subject: payloadSubject, preferences },
-    idempotent: true,
-  });
+  let response;
+  try {
+    response = await apiFetch('/api/subject-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, subject: payloadSubject, preferences }),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw error;
+    throw new Error('Sem conexão no momento. Confira a internet ou ative o modo demonstração.');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Não foi possível gerar este conteúdo agora.');
+  return data;
 }
 
 // Corrects one written answer against the question's model answer. Demo Mode
@@ -41,9 +52,17 @@ export async function gradeAnswer(subject, { question, modelAnswer, answer }) {
     await new Promise((resolve) => setTimeout(resolve, 400));
     return { ...gradeAgainstModel({ answer, modelAnswer }), mode: 'demo' };
   }
-  // Costs 1 credit like any other AI action (idempotent so a retry never double-charges).
-  return apiRequest('/api/subject-ai', {
-    body: { action: 'grade', subject: { name: subject.name, notes: subject.notes }, grading: { question, modelAnswer, answer }, preferences: getLearningPreferences() },
-    idempotent: true,
-  });
+  let response;
+  try {
+    response = await apiFetch('/api/subject-ai', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'grade', subject: { name: subject.name, notes: subject.notes }, grading: { question, modelAnswer, answer }, preferences: getLearningPreferences() }),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw error;
+    throw new Error('Sem conexão para corrigir agora. Compare com a resposta-modelo e marque você mesmo.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Não foi possível corrigir esta resposta agora.');
+  return data;
 }

@@ -32,15 +32,3 @@ test('study calendar normalization drops invalid events and keeps valid exams so
   assert.equal(calendar.events.length, 2);
   assert.equal(nextEventForSubject(calendar, 'historia', new Date('2026-09-21T12:00:00-03:00')).title, 'Prova A');
 });
-
-test('study calendar accepts the Google provider and defaults the source to Google Agenda', () => {
-  const calendar = normalizeStudyCalendar({
-    connected: true,
-    provider: 'google',
-    account: 'aluno@gmail.com',
-    events: [{ id: '1-2', title: 'Prova de História', subject: 'História', startsAt: '2026-09-28T08:00:00-03:00' }],
-  });
-  assert.equal(calendar.provider, 'google');
-  assert.equal(calendar.events[0].source, 'Google Agenda');
-  assert.equal(normalizeStudyCalendar({ provider: 'yahoo' }).provider, null);
-});

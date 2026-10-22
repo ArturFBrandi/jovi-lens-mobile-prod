@@ -3,9 +3,7 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Speech from 'expo-speech';
 import { isDemoMode } from './env.js';
-import { apiRequest } from './apiClient.js';
-import { byokHasTts } from './aiAccess.js';
-import { chunkText, TTS_CHUNK_CHARS } from '../shared/textChunks.js';
+import { apiFetch } from './apiClient.js';
 
 // "Browser" pitch differentiates speakers when only one pt-BR voice exists for
 // the on-device fallback (expo-speech, RN's equivalent of speechSynthesis).
@@ -23,10 +21,8 @@ function ttsTimeoutFor(text) {
   return 35_000 * Math.max(1, Math.ceil(String(text).length / 4000));
 }
 
-// Live AI voices need the user's own key with a TTS-capable provider; free
-// users always get the on-device voice (expo-speech).
 export function ttsMode() {
-  if (isDemoMode() || !byokHasTts()) return 'browser';
+  if (isDemoMode()) return 'browser';
   return liveTtsAvailable === false ? 'browser' : 'live';
 }
 
@@ -46,11 +42,6 @@ function ensureVoiceLookup() {
     })
     .catch(() => { cachedVoiceId = null; });
 }
-
-// Live voices are unusable for the rest of the session: no TTS-capable BYOK
-// key, or the server has no TTS configured. The caller falls back to the
-// device voice.
-const FALLBACK_CODES = new Set(['BYOK_REQUIRED', 'BYOK_CAPABILITY_UNSUPPORTED', 'AI_NOT_CONFIGURED']);
 
 // --- On-disk TTS cache -------------------------------------------------------
 // Every live segment is a paid provider call. Replaying a podcast, reopening
@@ -109,38 +100,33 @@ async function writeCache(key, parts, mimeType) {
 
 // Returns playable URIs for one segment, or null when live TTS is not usable
 // right now (caller falls back to on-device speech for this narration).
-// /api/tts caps each request at TTS_CHUNK_CHARS, so the text is split first
-// and the chunks are synthesized in order. BYOK_REJECTED is thrown so the
-// player can offer to fix the key.
 async function requestLiveTts(text, voice) {
   const key = cacheKey(text, voice);
   const cached = await readCache(key);
   if (cached) return cached;
 
-  const parts = [];
-  let mime = 'audio/mpeg';
-  for (const chunk of chunkText(text, TTS_CHUNK_CHARS)) {
-    let data;
-    try {
-      data = await apiRequest('/api/tts', { body: { text: chunk, voice }, timeoutMs: ttsTimeoutFor(chunk) });
-    } catch (error) {
-      if (FALLBACK_CODES.has(error?.code) || Number(error?.status) === 503) { liveTtsAvailable = false; return null; }
-      if (error?.code === 'BYOK_REJECTED') throw error;
-      // One flaky request used to disable live voice for the whole session.
-      // Only give up session-wide after repeated network failures.
-      if (error?.code === 'NETWORK') {
-        consecutiveFailures += 1;
-        if (consecutiveFailures >= 2) liveTtsAvailable = false;
-      }
-      // Rate limit or provider error: this narration continues with the device
-      // voice instead of stopping mid-podcast on an error banner.
-      return null;
+  let response;
+  try {
+    response = await apiFetch('/api/tts', { method: 'POST', body: JSON.stringify({ text, voice }), timeoutMs: ttsTimeoutFor(text) });
+  } catch (error) {
+    // One flaky request used to disable live voice for the whole session.
+    // Only give up session-wide after repeated network failures; a slow
+    // (timed-out) segment says nothing about the next one.
+    if (error?.name !== 'TimeoutError') {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 2) liveTtsAvailable = false;
     }
-    mime = data.mimeType || mime;
-    parts.push(...(Array.isArray(data.parts) ? data.parts : []));
+    return null;
   }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 503 || data.code === 'AI_NOT_CONFIGURED') { liveTtsAvailable = false; return null; }
+  // Rate limit or provider error: this narration continues with the device
+  // voice instead of stopping mid-podcast on an error banner.
+  if (!response.ok) return null;
   consecutiveFailures = 0;
   liveTtsAvailable = true;
+  const mime = data.mimeType || 'audio/mpeg';
+  const parts = Array.isArray(data.parts) ? data.parts : [];
   return (await writeCache(key, parts, mime)) || parts.map((b64) => `data:${mime};base64,${b64}`);
 }
 
@@ -235,7 +221,7 @@ class Narration {
       } catch (error) {
         if (this.stale(token)) return;
         this.state = 'idle';
-        this.emit({ error: error.message, errorCode: error.code });
+        this.emit({ error: error.message });
         return;
       }
       if (this.stale(token)) return;

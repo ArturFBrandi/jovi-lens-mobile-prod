@@ -16,14 +16,13 @@ const storage = createMMKV({ id: 'jovi-lens' });
 
 const NOTES_KEY = 'jovi_mobile_notes_v2';
 const HISTORY_KEY = 'jovi_mobile_ai_history_v1';
+const PLAN_KEY = 'jovi_mobile_plan_v1';
 const USER_KEY = 'jovi_mobile_user_v1';
 const SESSION_KEY = 'jovi_mobile_session_v1';
 const SUBJECT_KEY = 'jovi_mobile_subject_artifacts_v1';
 const LEARNING_PREFERENCES_KEY = 'jovi_mobile_learning_preferences_v1';
 const STUDY_CALENDAR_KEY = 'jovi_mobile_study_calendar_v1';
 const MEDIA_INDEX_KEY = 'jovi_mobile_media_index_v1';
-const CALENDAR_SETTINGS_KEY = 'jovi_mobile_calendar_settings_v1';
-const NOTIFICATION_SETTINGS_KEY = 'jovi_mobile_notification_settings_v1';
 const DISMISSED_SEEDS_KEY = 'jovi_mobile_dismissed_seed_notes_v1';
 
 // The browser preview has no app document directory; media stays in memory there.
@@ -263,6 +262,8 @@ export const setDismissedSeedNotes = (ids) => writeJson(DISMISSED_SEEDS_KEY, ids
 export const setNotes = (notes) => writeJson(NOTES_KEY, notes);
 export const getHistory = () => readJson(HISTORY_KEY, []);
 export const setHistory = (history) => writeJson(HISTORY_KEY, history);
+export const getPlan = () => readJson(PLAN_KEY, { type: 'free' });
+export const setPlan = (plan) => writeJson(PLAN_KEY, plan);
 export const getUser = () => readJson(USER_KEY, null);
 export const setUser = (user) => {
   try {
@@ -299,10 +300,3 @@ export const getLearningPreferences = () => ({ ...DEFAULT_LEARNING_PREFERENCES, 
 export const setLearningPreferences = (preferences) => writeJson(LEARNING_PREFERENCES_KEY, { ...DEFAULT_LEARNING_PREFERENCES, ...preferences });
 export const getStudyCalendar = () => readJson(STUDY_CALENDAR_KEY, null);
 export const setStudyCalendar = (calendar) => writeJson(STUDY_CALENDAR_KEY, calendar || null);
-
-// Device-only settings for the read-only calendar sync and exam reminders.
-// Never included in backups (see services/dataTransfer.js).
-export const getCalendarSettings = () => readJson(CALENDAR_SETTINGS_KEY, null);
-export const setCalendarSettings = (settings) => writeJson(CALENDAR_SETTINGS_KEY, settings || null);
-export const getNotificationSettings = () => readJson(NOTIFICATION_SETTINGS_KEY, null);
-export const setNotificationSettings = (settings) => writeJson(NOTIFICATION_SETTINGS_KEY, settings || null);

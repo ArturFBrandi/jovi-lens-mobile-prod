@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Icon from './Icon.jsx';
-import AiErrorActions from './AiErrorActions.jsx';
-import { requireAI } from '../services/aiAccess.js';
-import { asAiError } from '../services/apiErrors.js';
 import { useBottomInset, useTopInset } from '../hooks/safeArea.js';
 import SubjectExam from './SubjectExam.jsx';
 import StudyPlan from './StudyPlan.jsx';
@@ -14,7 +11,6 @@ import { generateSubjectContent, gradeAnswer } from '../services/subjectStudy.js
 import { useAppData } from '../context/AppDataContext.jsx';
 import { buildSubjectInsights } from '../shared/subjectInsights.js';
 import { getPresentationExamResult } from '../shared/demoSubjectArtifacts.js';
-import { isDemoMode } from '../services/env.js';
 import { gradeCard, cardIdFor, isDue, reviewQueue, reviewSummary } from '../shared/spacedReview.js';
 
 const TABS = [
@@ -27,9 +23,8 @@ const TABS = [
 ];
 
 export default function SubjectStudio({ subject, onClose, initialTab = 'overview' }) {
-  const { saveSubjectArtifact, getSubjectArtifact } = useAppData();
-  // Staged pitch numbers only in the presentation build.
-  const presentation = isDemoMode();
+  const { saveSubjectArtifact, getSubjectArtifact, plan } = useAppData();
+  const presentation = Boolean(plan?.presentationMode);
   const [tab, setTab] = useState(TABS.some((item) => item.id === initialTab) ? initialTab : 'overview');
   const topInset = useTopInset();
   const bottomInset = useBottomInset(16);
@@ -135,16 +130,14 @@ export default function SubjectStudio({ subject, onClose, initialTab = 'overview
               reviewCards={getSubjectArtifact(subject.name, 'review')?.data?.cards || {}}
               onSave={(data) => saveSubjectArtifact(subject.name, 'questions', data)}
               onReview={(cards) => saveSubjectArtifact(subject.name, 'review', { cards })}
-              onLeave={onClose}
             />
           ) : null}
-          {tab === 'exam' ? <SubjectExam subject={subject} savedExam={savedExam} savedResult={examResult} presentation={presentation} onResult={recordExamResult} onLeave={onClose} /> : null}
+          {tab === 'exam' ? <SubjectExam subject={subject} savedExam={savedExam} savedResult={examResult} presentation={presentation} onResult={recordExamResult} /> : null}
           {tab === 'podcast' ? (
             <PodcastPlayer
               subject={subject}
               saved={savedPodcast}
               savedVariants={savedPodcasts?.formats}
-              onLeave={onClose}
               onSave={(data) => {
                 saveSubjectArtifact(subject.name, 'podcast', data);
                 // Every generated format is kept, so switching back to it replays
@@ -158,8 +151,8 @@ export default function SubjectStudio({ subject, onClose, initialTab = 'overview
           ) : null}
           {tab === 'lesson' ? (
             <View className="gap-6">
-              <VideoRecommendations subject={subject} saved={savedVideoRecommendations} examResult={examResult} onSave={(data) => saveSubjectArtifact(subject.name, 'videoRecommendations', data)} onLeave={onClose} />
-              <LessonPlayer subject={subject} saved={savedLesson} onSave={(data) => saveSubjectArtifact(subject.name, 'lesson', data)} onLeave={onClose} />
+              <VideoRecommendations subject={subject} saved={savedVideoRecommendations} examResult={examResult} onSave={(data) => saveSubjectArtifact(subject.name, 'videoRecommendations', data)} />
+              <LessonPlayer subject={subject} saved={savedLesson} onSave={(data) => saveSubjectArtifact(subject.name, 'lesson', data)} />
             </View>
           ) : null}
           {tab === 'plan' ? (
@@ -170,7 +163,6 @@ export default function SubjectStudio({ subject, onClose, initialTab = 'overview
               savedLessons={savedVideoRecommendations?.videos?.filter((video) => video.saved) || []}
               onSave={(data) => saveSubjectArtifact(subject.name, 'plan', data)}
               onProgressSave={(data) => saveSubjectArtifact(subject.name, 'planProgress', data)}
-              onLeave={onClose}
             />
           ) : null}
         </ScrollView>
@@ -291,10 +283,10 @@ function dueLabel(card, now) {
 // Retrieval practice with spaced review: answer from memory, reveal the model
 // answer, then mark it. The list opens with what is due today; each mark
 // schedules the question's next appearance (shared/spacedReview.js).
-function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, onLeave }) {
+function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview }) {
   const [items, setItems] = useState(saved?.questions || null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [open, setOpen] = useState({});
   const [cards, setCards] = useState(reviewCards);
   // Written answers and corrections, keyed by question (cardIdFor) so a new
@@ -306,9 +298,8 @@ function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, 
   const now = new Date();
 
   async function generate() {
-    if (!requireAI()) return;
     setLoading(true);
-    setError(null);
+    setError('');
     try {
       const result = await generateSubjectContent(subject, { action: 'questions' });
       if (!result.questions?.length) throw new Error('Não foi possível gerar as perguntas agora.');
@@ -319,7 +310,7 @@ function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, 
       setGrading({});
       onSave?.(result);
     } catch (err) {
-      setError(asAiError(err, 'Falha ao gerar as perguntas.'));
+      setError(err.message || 'Falha ao gerar as perguntas.');
     } finally {
       setLoading(false);
     }
@@ -328,13 +319,13 @@ function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, 
   async function correct(item) {
     const id = cardIdFor(item.question);
     const answer = String(written[id] || '').trim();
-    if (!answer || !requireAI()) return;
+    if (!answer) return;
     setGrading((g) => ({ ...g, [id]: { loading: true } }));
     try {
       const result = await gradeAnswer(subject, { question: item.question, modelAnswer: item.answer, answer });
       setGrading((g) => ({ ...g, [id]: { result } }));
     } catch (err) {
-      setGrading((g) => ({ ...g, [id]: { error: asAiError(err, 'Não foi possível corrigir agora.') } }));
+      setGrading((g) => ({ ...g, [id]: { error: err.message || 'Não foi possível corrigir agora.' } }));
     }
   }
 
@@ -365,12 +356,7 @@ function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, 
           <Text className="text-[16px] font-bold text-slate-900">Perguntas sobre {subject.name} inteira</Text>
           <Text className="text-[13px] text-slate-600">Perguntas que cruzam todos os subtemas, com resposta-modelo. Responda de cabeça, confira e marque se acertou: o app agenda a próxima revisão de cada uma.</Text>
         </View>
-        {error ? (
-          <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-            <Text className="text-[13px] text-red-600">{error.message}</Text>
-            <AiErrorActions error={error} onRetry={generate} onNavigateAway={onLeave} />
-          </View>
-        ) : null}
+        {error ? <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert"><Text className="text-[13px] text-red-600">{error}</Text></View> : null}
         <Pressable accessibilityRole="button" onPress={generate} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
           <Icon name="sparkle" size={16} color="#ffffff" />
           <Text className="text-[14px] font-semibold text-white">Gerar perguntas</Text>
@@ -413,7 +399,6 @@ function SubjectQuestions({ subject, saved, reviewCards = {}, onSave, onReview, 
                     onChange={(text) => setWritten((w) => ({ ...w, [cardIdFor(item.question)]: text }))}
                     state={grading[cardIdFor(item.question)]}
                     onCorrect={() => correct(item)}
-                    onLeave={onLeave}
                   />
                   <Text className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Resposta-modelo</Text>
                   <Text className="text-[13px] leading-5 text-slate-700">{item.answer}</Text>
@@ -453,7 +438,7 @@ function ReviewStat({ value, label, tone }) {
 // Optional written answer, corrected against the model answer (live AI or,
 // in Demo Mode, concept overlap). The result suggests — but does not make —
 // the "Acertei"/"Errei" call: the student still decides.
-function WrittenAnswer({ value, onChange, state, onCorrect, onLeave }) {
+function WrittenAnswer({ value, onChange, state, onCorrect }) {
   const result = state?.result;
   return (
     <View className="gap-2">
@@ -474,12 +459,7 @@ function WrittenAnswer({ value, onChange, state, onCorrect, onLeave }) {
           <Text className="text-[12px] font-semibold text-white">{state?.loading ? 'Corrigindo...' : 'Corrigir minha resposta'}</Text>
         </Pressable>
       ) : null}
-      {state?.error ? (
-        <View accessibilityRole="alert">
-          <Text className="text-[12px] text-red-600">{state.error.message}</Text>
-          <AiErrorActions error={state.error} onRetry={onCorrect} onNavigateAway={onLeave} />
-        </View>
-      ) : null}
+      {state?.error ? <Text className="text-[12px] text-red-600" accessibilityRole="alert">{state.error}</Text> : null}
       {result ? (
         <View className={`gap-1 rounded-xl px-3 py-2.5 ${result.score >= 7 ? 'bg-emerald-50' : result.score >= 5 ? 'bg-amber-50' : 'bg-red-50'}`} accessibilityLiveRegion="polite">
           <Text className="text-[13px] font-bold text-slate-900">{result.score}/10 · {result.level}</Text>

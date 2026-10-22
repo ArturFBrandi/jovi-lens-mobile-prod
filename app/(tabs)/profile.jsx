@@ -1,19 +1,22 @@
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import Icon from '../../components/Icon.jsx';
-import AiAccessCard from '../../components/AiAccessCard.jsx';
-import CalendarCard from '../../components/CalendarCard.jsx';
-import ExamRemindersCard from '../../components/ExamRemindersCard.jsx';
 import { useTopInset } from '../../hooks/safeArea.js';
 import { useAnnounce } from '../../hooks/announce.js';
 import { useToast } from '../../shared/toast.js';
 import { useAppData } from '../../context/AppDataContext.jsx';
 import { createBackup, downloadBackup, readBackupFile } from '../../services/dataTransfer.js';
 import { confirmAction } from '../../services/confirm.js';
-import { signIn, signOut } from '../../services/googleAuth.js';
-import { isDemoMode } from '../../services/env.js';
+import { signOutGoogle, useGoogleSignIn } from '../../services/googleAuth.js';
 import { createDemoOutlookCalendar, daysUntilEvent, EMPTY_STUDY_CALENDAR, formatEventDate } from '../../shared/studyCalendar.js';
+
+const DEMO_USER = {
+  id: 'demo-student',
+  name: 'Ana Beatriz',
+  email: 'ana.beatriz@demo.jovi',
+  picture: '',
+};
 
 const STUDY_GOAL_OPTIONS = [
   { value: 'vestibular', label: 'Vestibular' },
@@ -67,42 +70,60 @@ function initialsOf(name) {
 }
 
 export default function ProfileScreen() {
-  const { user, setUser, records, notes, aiHistory, subjectArtifacts, learningPreferences, setLearningPreferences, studyCalendar, setStudyCalendar, restoreLocalData, clearLocalData } = useAppData();
+  const { user, setUser, plan, setPlan, records, notes, aiHistory, subjectArtifacts, learningPreferences, setLearningPreferences, studyCalendar, setStudyCalendar, restoreLocalData, clearLocalData } = useAppData();
   // Floating, auto-dismissing feedback: the old inline message rendered at the
   // very bottom of a ~6,000px page, out of sight of the button that caused it.
   const [authMessage, setAuthMessage] = useToast(3600);
   const [exporting, setExporting] = useState(false);
   useAnnounce(authMessage);
   const topInset = useTopInset();
-  const demo = isDemoMode();
+  const { signIn: signInWithGoogle, configured: googleConfigured } = useGoogleSignIn();
+
+  const trialActive = plan.type === 'trial' && new Date(plan.endsAt) > new Date();
+  const daysLeft = trialActive ? Math.max(1, Math.ceil((new Date(plan.endsAt) - new Date()) / 86400000)) : 0;
+
+  function enterDemoAccount() {
+    setUser(DEMO_USER);
+    setAuthMessage('Conta de demonstração ativada. Nenhum login real foi realizado.');
+  }
+
+  function leaveDemoAccount() {
+    signOutGoogle();
+    setUser(null);
+    setAuthMessage('Você saiu da conta.');
+  }
 
   async function handleGoogleSignIn() {
     try {
-      const googleUser = await signIn();
-      if (googleUser) setAuthMessage('Login com Google realizado.');
+      const googleUser = await signInWithGoogle();
+      if (googleUser) {
+        setUser(googleUser);
+        setAuthMessage('Login com Google realizado.');
+      }
     } catch (error) {
       setAuthMessage(error.message || 'Não foi possível entrar com o Google.');
     }
   }
 
-  async function handleSignOut() {
-    await signOut();
-    setAuthMessage('Você saiu da conta.');
+  function activateCopilot() {
+    if (!user) setUser(DEMO_USER);
+    setPlan({ type: 'pro', demo: true, activatedAt: new Date().toISOString() });
+    setAuthMessage('Acesso de demonstração ao Copilot ativado. Nenhuma cobrança foi feita.');
   }
 
-  // Undoes what "Preparar demo" set up: the demo Outlook agenda goes too,
-  // otherwise Hoje kept greeting Ana and listing fake exams.
-  function leaveDemoAccount() {
-    setUser(null);
-    if (studyCalendar.account === createDemoOutlookCalendar().account) setStudyCalendar(EMPTY_STUDY_CALENDAR);
-    setAuthMessage('Você saiu da conta.');
+  function startTrial() {
+    const startedAt = new Date();
+    const endsAt = new Date(startedAt.getTime() + 7 * 86400000);
+    if (!user) setUser(DEMO_USER);
+    setPlan({ type: 'trial', demo: true, startedAt: startedAt.toISOString(), endsAt: endsAt.toISOString() });
+    setAuthMessage('Teste de 7 dias ativado para a apresentação. Nenhuma cobrança foi feita.');
   }
 
   async function exportData() {
     if (exporting) return;
     setExporting(true);
     try {
-      const { data, summary } = await createBackup({ records, notes, aiHistory, user, subjectArtifacts, learningPreferences, studyCalendar });
+      const { data, summary } = await createBackup({ records, notes, aiHistory, plan, user, subjectArtifacts, learningPreferences, studyCalendar });
       const shared = await downloadBackup(data);
       const extras = [
         summary.skippedVideos ? `${summary.skippedVideos} vídeo(s) não entram no backup` : '',
@@ -129,11 +150,20 @@ export default function ProfileScreen() {
     setAuthMessage('Outlook conectado em modo demo. As provas detectadas já entram no plano de estudo.');
   }
 
-  // Presentation build only: demo student + demo calendar, no real login.
   function preparePresentationDemo() {
-    setUser({ id: 'demo-student', name: 'Ana Beatriz', email: 'ana.beatriz@demo.jovi', picture: '' });
+    setUser(DEMO_USER);
+    setPlan({ type: 'pro', demo: true, presentationMode: true, activatedAt: new Date().toISOString() });
     setStudyCalendar(createDemoOutlookCalendar());
     setAuthMessage('Modo apresentação pronto: estudante demo, História e provas do Outlook já estão preparados.');
+  }
+
+  // Undoes what "Preparar demo" set up: the demo student and the demo Outlook
+  // agenda go too, otherwise Hoje kept greeting Ana and listing fake exams.
+  function leavePresentationMode() {
+    setPlan({ type: 'free' });
+    if (user?.id === DEMO_USER.id) setUser(null);
+    if (studyCalendar.account === createDemoOutlookCalendar().account) setStudyCalendar(EMPTY_STUDY_CALENDAR);
+    setAuthMessage('Modo apresentação desligado: os painéis mostram só os seus dados.');
   }
 
   function disconnectOutlookDemo() {
@@ -163,16 +193,20 @@ export default function ProfileScreen() {
   async function clearData() {
     const confirmed = await confirmAction({
       title: 'Limpar dados locais',
-      message: demo
-        ? 'Apagar fotos, notas, histórico e preferências deste aparelho? Os exemplos do app voltam ao estado inicial.'
-        : 'Essa ação apaga fotos, notas, histórico e preferências deste aparelho.',
+      message: 'Apagar fotos, notas, histórico e preferências deste aparelho? Os exemplos do app voltam ao estado inicial.',
       confirmLabel: 'Apagar',
       destructive: true,
     });
     if (!confirmed) return;
     await clearLocalData();
-    setAuthMessage(demo ? 'Dados locais removidos. Os exemplos do app foram restaurados.' : 'Dados locais removidos.');
+    setAuthMessage('Dados locais removidos. Os exemplos do app foram restaurados.');
   }
+
+  const planTitle = trialActive
+    ? `${daysLeft} dias de teste restantes`
+    : plan.type === 'pro'
+      ? 'Copilot liberado'
+      : 'Estude com mais profundidade';
 
   return (
     <View className="flex-1 bg-white">
@@ -184,68 +218,97 @@ export default function ProfileScreen() {
         <Text className="-mt-2 text-[24px] font-bold text-slate-900">Perfil</Text>
         <Text className="-mt-3 text-[12px] text-slate-500">Seu painel de estudos agora fica na aba Hoje.</Text>
 
-        {demo ? (
-          <>
-            <View className="flex-row items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
-                {user ? <Text className="text-[14px] font-bold text-indigo-600">{initialsOf(user.name)}</Text> : <Icon name="user" size={19} color="#4f46e5" />}
-              </View>
-              <View className="flex-1 gap-0.5">
-                <Text className="text-[15px] font-bold text-slate-900">{user ? user.name : 'Conta de demonstração'}</Text>
-                <Text className="text-[12px] text-slate-500">{user ? user.email : 'Use "Preparar demo" para entrar como estudante'}</Text>
-              </View>
-              {user ? (
-                <Pressable accessibilityRole="button" onPress={leaveDemoAccount}><Text className="text-[13px] font-medium text-indigo-600">Sair</Text></Pressable>
-              ) : null}
-            </View>
-
-            <View className="gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-              <View className="flex-row items-start justify-between gap-2">
-                <View className="flex-1">
-                  <Text className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Modo apresentação</Text>
-                  <Text className="text-[16px] font-bold text-slate-900">Demo pronta em um toque</Text>
-                  <Text className="text-[12px] text-slate-600">Ativa a aluna demo e conecta as provas do Outlook para mostrar o fluxo completo sem criar nada na hora.</Text>
-                </View>
-                <Icon name="sparkle" size={18} color="#4f46e5" />
-              </View>
-              <Pressable accessibilityRole="button" onPress={preparePresentationDemo} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
-                <Icon name="sparkle" size={16} color="#ffffff" />
-                <Text className="text-[14px] font-semibold text-white">Preparar demo</Text>
-              </Pressable>
-            </View>
-          </>
-        ) : (
-          <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-            <Text className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Conta</Text>
-            {user ? (
-              <View className="flex-row items-center gap-3">
-                {user.picture ? (
-                  <Image source={{ uri: user.picture }} accessibilityIgnoresInvertColors accessibilityLabel={`Foto de ${user.name}`} className="h-12 w-12 rounded-full" />
-                ) : (
-                  <View className="h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
-                    <Text className="text-[16px] font-bold text-indigo-600">{initialsOf(user.name)}</Text>
-                  </View>
-                )}
-                <View className="flex-1 gap-0.5">
-                  <Text className="text-[15px] font-bold text-slate-900">{user.name}</Text>
-                  <Text className="text-[12px] text-slate-500">{user.email}</Text>
-                </View>
-                <Pressable accessibilityRole="button" onPress={handleSignOut}><Text className="text-[13px] font-medium text-indigo-600">Sair</Text></Pressable>
-              </View>
-            ) : (
-              <>
-                <Text className="text-[16px] font-bold text-slate-900">Entre para usar a IA</Text>
-                <Text className="text-[13px] text-slate-600">Cada conta Google ganha 3 análises gratuitas.</Text>
-                <Pressable accessibilityRole="button" onPress={handleGoogleSignIn} className="mt-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
-                  <Icon name="user" size={16} color="#ffffff" />
-                  <Text className="text-[14px] font-semibold text-white">Entrar com Google</Text>
-                </Pressable>
-              </>
-            )}
+        <View className="flex-row items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <View className="h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
+            {user ? <Text className="text-[14px] font-bold text-indigo-600">{initialsOf(user.name)}</Text> : <Icon name="user" size={19} color="#4f46e5" />}
           </View>
-        )}
+          <View className="flex-1 gap-0.5">
+            <Text className="text-[15px] font-bold text-slate-900">{user ? user.name : 'Conta de demonstração'}</Text>
+            <Text className="text-[12px] text-slate-500">{user ? user.email : 'Entre para testar o Copilot da JOVI'}</Text>
+          </View>
+          {user ? (
+            <Pressable accessibilityRole="button" onPress={leaveDemoAccount}><Text className="text-[13px] font-medium text-indigo-600">Sair</Text></Pressable>
+          ) : null}
+        </View>
 
-        <AiAccessCard onMessage={setAuthMessage} />
+        {!user && googleConfigured ? (
+          <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+            <Text className="text-[16px] font-bold text-slate-900">Entrar com sua conta Google</Text>
+            <Text className="text-[13px] text-slate-600">Sua cota de uso da IA passa a ser controlada pela sua conta em vez do seu endereço na rede.</Text>
+            <Pressable accessibilityRole="button" onPress={handleGoogleSignIn} className="mt-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-300 py-3">
+              <Icon name="user" size={16} color="#334155" />
+              <Text className="text-[14px] font-semibold text-slate-700">Entrar com o Google</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!user ? (
+          <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Fluxo de apresentação</Text>
+              <View className="rounded-full bg-amber-100 px-2 py-1"><Text className="text-[10px] font-bold text-amber-700">DEMO · SEM LOGIN REAL</Text></View>
+            </View>
+            <Text className="text-[16px] font-bold text-slate-900">Entre para continuar sua trilha</Text>
+            <Text className="text-[13px] text-slate-600">Este botão representa um futuro login da conta JOVI. Nesta proposta, tudo acontece localmente para você apresentar o produto sem depender de cadastro externo.</Text>
+            <Pressable accessibilityRole="button" onPress={enterDemoAccount} className="mt-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
+              <Icon name="user" size={16} color="#ffffff" />
+              <Text className="text-[14px] font-semibold text-white">Entrar como estudante</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View className="gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+          <View className="flex-row items-start justify-between gap-2">
+            <View className="flex-1">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Modo apresentação</Text>
+              <Text className="text-[16px] font-bold text-slate-900">Demo pronta em um toque</Text>
+              <Text className="text-[12px] text-slate-600">Ativa a aluna demo, libera o Copilot e conecta as provas do Outlook para mostrar o fluxo completo sem criar nada na hora.</Text>
+            </View>
+            <Icon name="sparkle" size={18} color="#4f46e5" />
+          </View>
+          {plan.presentationMode ? (
+            <Pressable accessibilityRole="button" onPress={leavePresentationMode} className="flex-row items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white py-3">
+              <Icon name="close" size={16} color="#4f46e5" />
+              <Text className="text-[14px] font-semibold text-indigo-700">Sair do modo apresentação</Text>
+            </Pressable>
+          ) : (
+            <Pressable accessibilityRole="button" onPress={preparePresentationDemo} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
+              <Icon name="sparkle" size={16} color="#ffffff" />
+              <Text className="text-[14px] font-semibold text-white">Preparar demo</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <View className="flex-row items-center justify-between">
+            <View>
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">JOVI Copilot</Text>
+              <Text className="text-[16px] font-bold text-slate-900">{planTitle}</Text>
+            </View>
+            <Icon name="crown" size={24} color="#d97706" />
+          </View>
+          <View className="gap-1.5">
+            <BenefitLine text="Análises inteligentes de conteúdo" />
+            <BenefitLine text="Trilha Entender · Resolver · Praticar" />
+            <BenefitLine text="Histórico e notas para revisão" />
+          </View>
+          {!trialActive && plan.type !== 'pro' ? (
+            <Pressable accessibilityRole="button" onPress={startTrial} className="items-center rounded-xl bg-indigo-600 py-3">
+              <Text className="text-[14px] font-semibold text-white">Testar por 7 dias · Demo</Text>
+            </Pressable>
+          ) : null}
+          {plan.type !== 'pro' ? (
+            <Pressable accessibilityRole="button" onPress={activateCopilot} className="items-center rounded-xl border border-slate-200 py-3">
+              <Text className="text-[14px] font-semibold text-slate-600">Ativar acesso Copilot · Demo</Text>
+            </Pressable>
+          ) : (
+            <View className="flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5">
+              <Icon name="check" size={15} color="#16a34a" />
+              <Text className="text-[13px] font-medium text-emerald-700">Acesso demonstrativo ativo</Text>
+            </View>
+          )}
+          <Text className="text-[11px] text-slate-400">Exemplo de apresentação: não há cobrança, assinatura ou login externo neste fluxo.</Text>
+        </View>
 
         <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
           <View className="flex-row items-start justify-between gap-2">
@@ -272,58 +335,51 @@ export default function ProfileScreen() {
           <PreferenceField label="Nível atual" options={LEVEL_OPTIONS} value={learningPreferences.level} onChange={(v) => updateLearningPreference('level', v)} />
         </View>
 
-        {demo ? (
-          <View className={`gap-3 rounded-2xl border p-4 ${studyCalendar.connected ? 'border-indigo-200 bg-indigo-50' : 'border-slate-200 bg-white'}`}>
-            <View className="flex-row items-start justify-between gap-2">
-              <View className="flex-1">
-                <Text className="text-[15px] font-bold text-slate-900">Calendário de provas</Text>
-                <Text className="text-[12px] text-slate-500">Use o Outlook para ajustar o plano por matéria com datas reais.</Text>
-              </View>
-              <Icon name="calendar" size={18} color="#4f46e5" />
+        <View className={`gap-3 rounded-2xl border p-4 ${studyCalendar.connected ? 'border-indigo-200 bg-indigo-50' : 'border-slate-200 bg-white'}`}>
+          <View className="flex-row items-start justify-between gap-2">
+            <View className="flex-1">
+              <Text className="text-[15px] font-bold text-slate-900">Calendário de provas</Text>
+              <Text className="text-[12px] text-slate-500">Use o Outlook para ajustar o plano por matéria com datas reais.</Text>
             </View>
-            {studyCalendar.connected ? (
-              <>
-                <View className="rounded-xl bg-white px-3 py-2">
-                  <Text className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Outlook conectado</Text>
-                  <Text className="text-[12px] text-slate-600">{studyCalendar.account}</Text>
-                </View>
-                <View className="gap-2">
-                  {studyCalendar.events.slice(0, 3).map((event) => (
-                    <View key={event.id} className="rounded-xl border border-indigo-100 bg-white px-3 py-2.5">
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-indigo-500">{event.subject}</Text>
-                      <Text className="text-[13px] font-bold text-slate-900">{event.title}</Text>
-                      <Text className="text-[11px] text-slate-500">{formatEventDate(event)} · em {daysUntilEvent(event)} dias</Text>
-                    </View>
-                  ))}
-                </View>
-                <View className="flex-row gap-2">
-                  <Pressable accessibilityRole="button" onPress={connectOutlookDemo} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5">
-                    <Icon name="rotate" size={14} color="#ffffff" />
-                    <Text className="text-[12px] font-semibold text-white">Atualizar</Text>
-                  </Pressable>
-                  <Pressable accessibilityRole="button" onPress={disconnectOutlookDemo} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5">
-                    <Icon name="close" size={14} color="#475569" />
-                    <Text className="text-[12px] font-semibold text-slate-600">Desconectar</Text>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              <>
-                <Text className="text-[13px] leading-5 text-slate-600">Ao conectar, o JOVI detecta eventos de prova e muda a prioridade do plano automaticamente.</Text>
-                <Pressable accessibilityRole="button" onPress={connectOutlookDemo} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
-                  <Icon name="calendar" size={16} color="#ffffff" />
-                  <Text className="text-[14px] font-semibold text-white">Conectar Outlook · Demo</Text>
-                </Pressable>
-              </>
-            )}
-            <Text className="text-[11px] text-slate-400">Demo local: nenhum login Microsoft real é feito nesta versão.</Text>
+            <Icon name="calendar" size={18} color="#4f46e5" />
           </View>
-        ) : null}
-
-        {demo ? null : <CalendarCard />}
-
-        {/* Also shown in the presentation build: reminders work off the demo calendar. */}
-        <ExamRemindersCard />
+          {studyCalendar.connected ? (
+            <>
+              <View className="rounded-xl bg-white px-3 py-2">
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Outlook conectado</Text>
+                <Text className="text-[12px] text-slate-600">{studyCalendar.account}</Text>
+              </View>
+              <View className="gap-2">
+                {studyCalendar.events.slice(0, 3).map((event) => (
+                  <View key={event.id} className="rounded-xl border border-indigo-100 bg-white px-3 py-2.5">
+                    <Text className="text-[10px] font-bold uppercase tracking-wide text-indigo-500">{event.subject}</Text>
+                    <Text className="text-[13px] font-bold text-slate-900">{event.title}</Text>
+                    <Text className="text-[11px] text-slate-500">{formatEventDate(event)} · em {daysUntilEvent(event)} dias</Text>
+                  </View>
+                ))}
+              </View>
+              <View className="flex-row gap-2">
+                <Pressable accessibilityRole="button" onPress={connectOutlookDemo} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5">
+                  <Icon name="rotate" size={14} color="#ffffff" />
+                  <Text className="text-[12px] font-semibold text-white">Atualizar</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={disconnectOutlookDemo} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5">
+                  <Icon name="close" size={14} color="#475569" />
+                  <Text className="text-[12px] font-semibold text-slate-600">Desconectar</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text className="text-[13px] leading-5 text-slate-600">Ao conectar, o JOVI detecta eventos de prova e muda a prioridade do plano automaticamente.</Text>
+              <Pressable accessibilityRole="button" onPress={connectOutlookDemo} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
+                <Icon name="calendar" size={16} color="#ffffff" />
+                <Text className="text-[14px] font-semibold text-white">Conectar Outlook · Demo</Text>
+              </Pressable>
+            </>
+          )}
+          <Text className="text-[11px] text-slate-400">Demo local: nenhum login Microsoft real é feito nesta versão.</Text>
+        </View>
 
         <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
           <View className="flex-row items-start justify-between gap-2">
@@ -358,7 +414,7 @@ export default function ProfileScreen() {
             <Icon name="trash" size={14} color="#dc2626" />
             <Text className="text-[13px] font-medium text-red-600">Limpar dados locais</Text>
           </Pressable>
-          <Text className="text-[11px] text-slate-400">{demo ? 'Essa ação apaga fotos, notas, histórico e artefatos do Estúdio deste dispositivo. Ela não remove os exemplos do app.' : 'Essa ação apaga fotos, notas, histórico e preferências deste aparelho.'}</Text>
+          <Text className="text-[11px] text-slate-400">Essa ação apaga fotos, notas, histórico, plano demonstrativo e artefatos do Estúdio deste dispositivo. Ela não remove os exemplos do app.</Text>
         </View>
 
       </ScrollView>
@@ -368,6 +424,15 @@ export default function ProfileScreen() {
           <Text className="flex-1 text-[13px] font-medium text-white">{authMessage}</Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function BenefitLine({ text }) {
+  return (
+    <View className="flex-row items-center gap-2">
+      <Icon name="check" size={15} color="#16a34a" />
+      <Text className="text-[13px] text-slate-700">{text}</Text>
     </View>
   );
 }

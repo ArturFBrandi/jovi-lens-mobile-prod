@@ -72,7 +72,7 @@ function normalizeEvent(event) {
   return {
     id: String(event.id || `${normalizeText(subject)}-${startsAt}`).slice(0, 120),
     type: event.type === 'assignment' ? 'assignment' : 'exam',
-    source: String(event.source || 'Google Agenda').slice(0, 40),
+    source: String(event.source || 'Outlook').slice(0, 40),
     subject: subject.slice(0, 80),
     title: title.slice(0, 160),
     startsAt,
@@ -86,8 +86,7 @@ export function normalizeStudyCalendar(calendar = {}) {
   const events = Array.isArray(calendar.events) ? calendar.events.map(normalizeEvent).filter(Boolean) : [];
   return {
     connected: Boolean(calendar.connected),
-    // google = the device's read-only Google calendar; outlook = demo only.
-    provider: ['google', 'outlook'].includes(calendar.provider) ? calendar.provider : null,
+    provider: calendar.provider === 'outlook' ? 'outlook' : null,
     account: String(calendar.account || '').slice(0, 120),
     syncedAt: calendar.syncedAt && !Number.isNaN(new Date(calendar.syncedAt).getTime()) ? String(calendar.syncedAt) : null,
     events: events.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)),

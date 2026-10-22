@@ -1,26 +1,21 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Icon from './Icon.jsx';
-import AiErrorActions from './AiErrorActions.jsx';
-import { useAppData } from '../context/AppDataContext.jsx';
-import { requireAI } from '../services/aiAccess.js';
-import { asAiError } from '../services/apiErrors.js';
-import { isDemoMode } from '../services/env.js';
 import { openExternalUrl } from '../services/links.js';
+import { useAppData } from '../context/AppDataContext.jsx';
 import { generateSubjectContent } from '../services/subjectStudy.js';
 import { daysUntilEvent, formatEventDate } from '../shared/studyCalendar.js';
 
-export default function StudyPlan({ subject, savedPlan, savedProgress = {}, savedLessons = [], onSave, onProgressSave, onLeave }) {
-  const { studyCalendar } = useAppData();
+export default function StudyPlan({ subject, savedPlan, savedProgress = {}, savedLessons = [], onSave, onProgressSave }) {
+  const { studyCalendar, plan: appPlan } = useAppData();
   const [plan, setPlan] = useState(savedPlan || null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [done, setDone] = useState(savedProgress);
 
   async function generate() {
-    if (!requireAI()) return;
     setLoading(true);
-    setError(null);
+    setError('');
     try {
       const result = await generateSubjectContent(subject, { action: 'plan' });
       if (!result.sessions?.length) throw new Error('Não foi possível montar o plano agora.');
@@ -29,7 +24,7 @@ export default function StudyPlan({ subject, savedPlan, savedProgress = {}, save
       onSave?.(result);
       onProgressSave?.({});
     } catch (err) {
-      setError(asAiError(err, 'Falha ao gerar o plano.'));
+      setError(err.message || 'Falha ao gerar o plano.');
     } finally {
       setLoading(false);
     }
@@ -61,12 +56,7 @@ export default function StudyPlan({ subject, savedPlan, savedProgress = {}, save
           <Text className="text-[16px] font-bold text-slate-900">Trilha adaptativa de {subject.name}</Text>
           <Text className="text-[13px] text-slate-600">Uma sequência de sessões com revisão espaçada, priorizando os subtemas mais densos do que você já estudou.</Text>
         </View>
-        {error ? (
-          <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert">
-            <Text className="text-[13px] text-red-600">{error.message}</Text>
-            <AiErrorActions error={error} onRetry={generate} onNavigateAway={onLeave} />
-          </View>
-        ) : null}
+        {error ? <View className="rounded-xl bg-red-50 px-3 py-2.5" accessibilityRole="alert"><Text className="text-[13px] text-red-600">{error}</Text></View> : null}
         <SavedLessons lessons={savedLessons} />
         <Pressable accessibilityRole="button" onPress={generate} className="flex-row items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3">
           <Icon name="route" size={16} color="#ffffff" />
@@ -90,7 +80,7 @@ export default function StudyPlan({ subject, savedPlan, savedProgress = {}, save
       ) : null}
       {/* A plan only claims a detected exam while a calendar is actually
           connected (or in the pitch) — the preloaded example plan carries one. */}
-      {plan.calendarEvent && (studyCalendar?.connected || isDemoMode()) ? <CalendarDeadline event={plan.calendarEvent} /> : null}
+      {plan.calendarEvent && (studyCalendar?.connected || appPlan?.presentationMode) ? <CalendarDeadline event={plan.calendarEvent} /> : null}
       <View className="gap-1.5">
         <Text className="text-[12px] text-slate-500">{doneCount}/{totalTasks} tarefas</Text>
         <View className="h-2 overflow-hidden rounded-full bg-slate-100">

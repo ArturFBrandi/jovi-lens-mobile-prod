@@ -5,8 +5,6 @@ import { getDismissedSeedNotes, readMediaAsDataUri } from './storage.js';
 import { isSafeDataUri } from '../shared/mediaPaths.js';
 
 const BACKUP_VERSION = 1;
-// Backups hold study data only: never the session, BYOK keys, or the calendar
-// and notification settings.
 const MAX_IMPORT_BYTES = 120 * 1024 * 1024;
 // Export stops embedding photos below the import ceiling (with room for the
 // notes/history JSON): a backup the app then refuses to import is worse than
@@ -18,7 +16,7 @@ const MAX_EXPORT_MEDIA_CHARS = 100 * 1024 * 1024;
 // another phone or after a reinstall. Photos are embedded as data: URIs so the
 // file is self-contained; videos are left out (a few of them would push the
 // JSON past what the import can safely hold in memory) and reported instead.
-export async function createBackup({ records = [], notes = [], aiHistory = [], user = null, subjectArtifacts = {}, learningPreferences = {}, studyCalendar = null } = {}) {
+export async function createBackup({ records = [], notes = [], aiHistory = [], plan = { type: 'free' }, user = null, subjectArtifacts = {}, learningPreferences = {}, studyCalendar = null } = {}) {
   const own = records.filter((record) => record?.source !== 'sample');
   const portable = [];
   let skippedVideos = 0;
@@ -44,6 +42,7 @@ export async function createBackup({ records = [], notes = [], aiHistory = [], u
       notes,
       dismissedSeedNotes: getDismissedSeedNotes(),
       aiHistory,
+      plan,
       user,
       subjectArtifacts,
       learningPreferences,
@@ -147,6 +146,7 @@ export async function readBackupFile(file) {
     notes: listOrEmpty(data.notes).filter((note) => isObject(note) && typeof note.id === 'string' && typeof note.title === 'string').map(sanitizeNote),
     dismissedSeedNotes: listOrEmpty(data.dismissedSeedNotes).filter((id) => typeof id === 'string'),
     aiHistory: listOrEmpty(data.aiHistory).filter(isObject),
+    plan: isObject(data.plan) ? data.plan : { type: 'free' },
     user: isObject(data.user) ? data.user : null,
     subjectArtifacts: isObject(data.subjectArtifacts) ? sanitizeArtifacts(data.subjectArtifacts) : {},
     learningPreferences: isObject(data.learningPreferences) ? data.learningPreferences : {},

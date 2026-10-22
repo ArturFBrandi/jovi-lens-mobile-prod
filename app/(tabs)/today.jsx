@@ -6,7 +6,6 @@ import Icon from '../../components/Icon.jsx';
 import StudentDashboard from '../../components/StudentDashboard.jsx';
 import { useTopInset } from '../../hooks/safeArea.js';
 import { useAppData } from '../../context/AppDataContext.jsx';
-import { isDemoMode } from '../../services/env.js';
 import { collectStudyActivity } from '../../shared/studentDashboard.js';
 import { dueAcrossSubjects } from '../../shared/spacedReview.js';
 
@@ -16,7 +15,7 @@ import { dueAcrossSubjects } from '../../shared/spacedReview.js';
 export default function TodayScreen() {
   const router = useRouter();
   const topInset = useTopInset();
-  const { user, subjects, notes, aiHistory, subjectArtifacts, studyCalendar } = useAppData();
+  const { user, plan, subjects, notes, aiHistory, subjectArtifacts, studyCalendar } = useAppData();
   const activity = useMemo(() => collectStudyActivity({ aiHistory, notes, subjectArtifacts }), [aiHistory, notes, subjectArtifacts]);
   const firstName = user?.name ? user.name.split(' ')[0] : '';
   // Recomputed per calendar day (a tab kept mounted past midnight kept the old
@@ -76,15 +75,17 @@ export default function TodayScreen() {
           </View>
         ) : null}
 
-        {/* Staged pitch numbers and example inputs only in the presentation build. */}
+        {/* Keyed by mode: the dashboard seeds its example inputs on mount, so
+            switching presentation on/off must remount it, not reuse state. */}
         <StudentDashboard
+          key={plan?.presentationMode ? 'presentation' : 'student'}
           subjects={subjects}
           notes={notes}
           aiHistory={aiHistory}
           subjectArtifacts={subjectArtifacts}
           studyCalendar={studyCalendar}
           activity={activity}
-          presentation={isDemoMode()}
+          presentation={Boolean(plan?.presentationMode)}
         />
       </ScrollView>
     </View>

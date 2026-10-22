@@ -7,11 +7,8 @@ import * as Linking from 'expo-linking';
 import { getDemoAction, getDemoAnalysis } from '../shared/demoResponses.js';
 import { demoAssetModule } from './demoAssets.js';
 import { isDemoMode } from './env.js';
-import { apiRequest } from './apiClient.js';
-import { ApiError } from './apiErrors.js';
+import { apiFetch } from './apiClient.js';
 import { rebaseMediaUri } from './storage.js';
-
-const MAX_IMAGE_BASE64 = 3_000_000;
 
 function getImageSize(uri) {
   return new Promise((resolve, reject) => {
@@ -45,7 +42,7 @@ async function toLoadableUri(uri) {
 // does the resize+compress+base64 natively in one call, and (unlike the web version)
 // takes the source URI directly, so there's no separate fetch-as-blob step for
 // remote images either.
-export async function prepareImageForAI(uri, maxSide = 1600, { compress = 0.82 } = {}) {
+export async function prepareImageForAI(uri, maxSide = 1600) {
   const { uri: loadableUri, cleanup } = await toLoadableUri(uri);
   try {
     const { width, height } = await getImageSize(loadableUri);
@@ -56,7 +53,7 @@ export async function prepareImageForAI(uri, maxSide = 1600, { compress = 0.82 }
     const result = await ImageManipulator.manipulateAsync(
       loadableUri,
       [{ resize: { width: targetWidth, height: targetHeight } }],
-      { compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
     return `data:image/jpeg;base64,${result.base64}`;
   } finally {
@@ -89,18 +86,24 @@ async function requestAnalysis(src, { action = 'analyze', question = '', context
 
   const payload = { action, question, context };
   if (IMAGE_ACTIONS.has(action) || !context) {
-    // The server accepts up to 3,000,000 base64 chars: retry smaller and more
-    // compressed before giving up.
-    let prepared = await prepareImageForAI(src, 1600);
-    if (prepared.length - prepared.indexOf(',') - 1 > MAX_IMAGE_BASE64) prepared = await prepareImageForAI(src, 1200, { compress: 0.7 });
+    const prepared = await prepareImageForAI(src, 1600);
     if (signal?.aborted) throw abortError();
     const [header, base64] = prepared.split(',');
-    if (base64.length > MAX_IMAGE_BASE64) throw new ApiError({ code: 'PAYLOAD_TOO_LARGE' });
     payload.image = base64;
     payload.mimeType = header.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
   }
 
-  return apiRequest('/api/analyze-image', { body: payload, idempotent: true, signal });
+  let response;
+  try {
+    response = await apiFetch('/api/analyze-image', { method: 'POST', body: JSON.stringify(payload), signal });
+  } catch (error) {
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+    throw new Error('Sem conexão no momento. Confira a internet ou ative o modo demonstração.');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Não foi possível analisar a imagem.');
+  return data;
 }
 
 export async function analyzeImage(src, options) {

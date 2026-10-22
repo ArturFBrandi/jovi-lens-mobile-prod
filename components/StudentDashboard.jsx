@@ -13,7 +13,7 @@ function formatTimer(seconds) {
   return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
-// `presentation` (the demo build) turns on the staged pitch numbers and
+// `presentation` (plan.presentationMode) turns on the staged pitch numbers and
 // pre-filled examples; `activity` feeds the real streak (see shared/studentDashboard.js).
 export default function StudentDashboard({ subjects, notes, aiHistory, subjectArtifacts, studyCalendar, activity = [], presentation = false }) {
   const [query, setQuery] = useState(presentation ? 'Revolução Industrial' : '');
@@ -61,16 +61,6 @@ export default function StudentDashboard({ subjects, notes, aiHistory, subjectAr
 
   function toggleBlock(block) {
     setOpenBlocks((value) => ({ ...value, [block]: !value[block] }));
-  }
-
-  if (dashboard.empty) {
-    return (
-      <View className="items-center gap-2 rounded-2xl border border-indigo-100 bg-white px-4 py-6">
-        <Icon name="note" size={24} color="#4f46e5" />
-        <Text className="text-[16px] font-bold text-slate-900">Seu painel aparece aqui</Text>
-        <Text className="text-center text-[13px] text-slate-500">Salve notas a partir das suas fotos para ver progresso, provas e revisões.</Text>
-      </View>
-    );
   }
 
   return (
