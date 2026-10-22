@@ -1,40 +1,82 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JOVI Lens · Política de privacidade</title>
-  <style>
-    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 720px; margin: 0 auto; padding: 24px 16px; color: #1f2937; background: #ffffff; }
-    h1 { font-size: 1.6rem; }
-    h2 { font-size: 1.15rem; margin-top: 2rem; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidade · JOVI Lens</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --line: #e2e8f0; --accent: #4f46e5; --bg: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #f1f5f9; --muted: #94a3b8; --line: #1e293b; --accent: #818cf8; --bg: #0b1120; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 32px; line-height: 1.2; margin: 8px 0 4px; }
+  h2 { font-size: 19px; margin: 32px 0 6px; }
+  p, li { color: var(--muted); }
+  ul { padding-left: 20px; }
+  a { color: var(--accent); }
+  .meta { font-size: 14px; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; }
+  footer a { margin-right: 16px; }
+</style>
 </head>
 <body>
-  <h1>Política de privacidade do JOVI Lens</h1>
+<main>
+  <a href="/about.html">JOVI Lens</a>
+  <h1>Política de Privacidade</h1>
+  <p class="meta">Última atualização: 22 de outubro de 2026</p>
 
-  <h2>1. Quem somos</h2>
-  <p>O JOVI Lens é um projeto acadêmico. Para qualquer dúvida sobre seus dados, escreva para <a href="mailto:contato@exemplo.com">contato@exemplo.com</a>.</p>
+  <p>Esta política explica quais dados o JOVI Lens (app Android e versão web de testes) coleta, como usa e com quem compartilha. O JOVI Lens está em fase de testes com um grupo restrito de usuários.</p>
 
-  <h2>2. Dados da conta Google</h2>
-  <p>Ao entrar com o Google, recebemos o identificador, o e-mail e o nome da sua conta. Eles são usados apenas para identificar sua conta e contar as 3 análises gratuitas. A sessão no app dura 30 dias.</p>
+  <h2>1. Dados da sua conta Google</h2>
+  <p>No app Android, você entra com sua conta Google. Recebemos do Google apenas:</p>
+  <ul>
+    <li>seu nome, endereço de e-mail e foto de perfil;</li>
+    <li>o identificador da sua conta Google.</li>
+  </ul>
+  <p>Usamos esses dados somente para identificar sua conta no app, mostrar seu nome e foto no Perfil e controlar as 3 interações gratuitas com a IA. Não pedimos acesso a Gmail, Drive, Agenda, contatos ou qualquer outro dado da sua conta Google.</p>
 
-  <h2>3. Fotos, textos e áudios</h2>
-  <p>O conteúdo que você envia é repassado ao provedor de IA somente para processar cada pedido e não é armazenado pelo servidor do JOVI Lens. As análises gratuitas usam a MiniMax, que processa o conteúdo conforme os termos de uso dela. Com sua própria chave, o provedor escolhido processa o conteúdo conforme os termos da sua conta.</p>
+  <h2>2. O que fica no seu aparelho</h2>
+  <p>Fotos, notas, histórico de estudo e preferências ficam armazenados apenas no seu aparelho (ou no navegador, na versão web). Não mantemos cópia deles nos nossos servidores. Se você usar sua própria chave de IA, ela fica criptografada no armazenamento seguro do aparelho.</p>
 
-  <h2>4. Sua chave de IA</h2>
-  <p>A chave fica armazenada de forma criptografada no seu aparelho, é enviada por HTTPS apenas a cada pedido e nunca é armazenada nem registrada em logs pelo servidor.</p>
+  <h2>3. O que fica nos nossos servidores</h2>
+  <ul>
+    <li><strong>Contador de interações:</strong> o número de interações gratuitas usadas, associado ao identificador da sua conta Google.</li>
+    <li><strong>Sessão:</strong> um token assinado que mantém você conectado por até 30 dias. Ele fica no seu aparelho; o servidor apenas confere a assinatura.</li>
+    <li><strong>Registros técnicos:</strong> para segurança e diagnóstico, registramos rota, horário, código de status e uma versão resumida (hash) do identificador da conta. Esses registros não contêm suas fotos, textos, nome ou e-mail.</li>
+  </ul>
 
-  <h2>5. Agenda</h2>
-  <p>O acesso à agenda é somente leitura, acontece no próprio aparelho e se limita à conta Google com que você entrou. Nenhum evento é criado ou alterado. Apenas o título, a data, a matéria e os tópicos de até 5 provas próximas são enviados junto com os pedidos de estudo.</p>
+  <h2>4. Processamento por IA</h2>
+  <p>Quando você usa um recurso de IA (por exemplo, analisar uma foto ou fazer uma pergunta), o conteúdo necessário para aquele pedido — a foto ou o texto — é enviado ao nosso servidor e repassado ao provedor de IA (atualmente a MiniMax) para gerar a resposta. Não armazenamos esse conteúdo depois que a resposta é entregue. Se você usar sua própria chave, o pedido é feito com ela, no provedor que você escolheu (Google Gemini, OpenAI ou MiniMax), sob os termos desse provedor.</p>
 
-  <h2>6. Notificações</h2>
-  <p>Os lembretes de prova são notificações locais, agendadas no próprio aparelho.</p>
+  <h2>5. Compartilhamento</h2>
+  <p>Não vendemos seus dados e não os usamos para publicidade. Compartilhamos dados apenas com os provedores de IA, na forma descrita acima, e com a infraestrutura de hospedagem do serviço (Vercel e Upstash), que processa os dados em nosso nome.</p>
 
-  <h2>7. Verificação do aparelho</h2>
-  <p>O app usa a verificação de integridade do Google Play (Play Integrity) para confirmar que o app oficial está rodando em um aparelho sem modificações.</p>
+  <h2>6. Uso de dados do Google</h2>
+  <p>O uso e a transferência, para qualquer outro app, de informações recebidas das APIs do Google seguem a <a href="https://developers.google.com/terms/api-services-user-data-policy">Política de Dados do Usuário dos Serviços de API do Google</a>, incluindo os requisitos de Uso Limitado.</p>
 
-  <h2>8. Exclusão</h2>
-  <p>A opção "Apagar dados" no app remove os dados locais. Para apagar o registro de créditos da sua conta, escreva para o contato acima.</p>
+  <h2>7. Seus controles</h2>
+  <ul>
+    <li><strong>Sair:</strong> em Perfil, "Sair" remove a sessão do aparelho.</li>
+    <li><strong>Apagar dados locais:</strong> remova o app ou apague os dados dele nas configurações do Android.</li>
+    <li><strong>Revogar acesso:</strong> você pode remover o JOVI Lens em <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+    <li><strong>Excluir o contador do servidor:</strong> peça pelo contato abaixo e excluímos o registro associado à sua conta.</li>
+  </ul>
+
+  <h2>8. Versão web de testes</h2>
+  <p>A versão web é acessada com um código de testes e não usa login com Google. Ela guarda um cookie de acesso por até 12 horas. Para segurança, o endereço IP de quem usa a versão de testes pode aparecer nos registros técnicos.</p>
+
+  <h2>9. Contato</h2>
+  <p>Dúvidas ou pedidos sobre seus dados: <a href="mailto:CONTACT_EMAIL">CONTACT_EMAIL</a>.</p>
+
+  <h2>10. Alterações</h2>
+  <p>Se esta política mudar, atualizaremos esta página e a data no topo.</p>
+
+  <footer>
+    <a href="/about.html">Sobre o JOVI Lens</a>
+    <a href="/terms.html">Termos de Uso</a>
+  </footer>
+</main>
 </body>
 </html>

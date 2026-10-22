@@ -37,7 +37,7 @@ export async function generateSubjectContent(subject, { action, format } = {}) {
     });
   } catch (error) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError' || error?.code) throw error;
-    throw new Error('Sem conexão no momento. Confira a internet ou ative o modo demonstração.');
+    throw new Error('Sem conexão no momento. Confira a internet e tente novamente.');
   }
 
   const data = await response.json().catch(() => ({}));

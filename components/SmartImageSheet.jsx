@@ -356,7 +356,7 @@ export default function SmartImageSheet({ record, initialView = 'viewer', onClos
                 <View className="gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-4" accessibilityRole="alert">
                   <Text className="text-[14px] font-bold text-red-700">Análise indisponível</Text>
                   <Text className="text-[13px] text-red-600">{error}</Text>
-                  <Text className="text-[12px] text-red-400">Verifique a conexão ou ative o modo demonstração para apresentar o fluxo sem depender da IA ao vivo.</Text>
+                  <Text className="text-[12px] text-red-400">Verifique a conexão e tente novamente.</Text>
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => { setError(''); setAnalysisRequestedFor(null); setTimeout(() => setAnalysisRequestedFor(record.id), 0); }}

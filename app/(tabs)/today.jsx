@@ -75,8 +75,17 @@ export default function TodayScreen() {
           </View>
         ) : null}
 
-        {/* Keyed by mode: the dashboard seeds its example inputs on mount, so
-            switching presentation on/off must remount it, not reuse state. */}
+        {/* Without any matéria the dashboard has nothing real to plan and falls
+            back to example subjects, so a new student sees how to start instead. */}
+        {!subjects.length && !plan?.presentationMode ? (
+          <View className="items-center gap-2 rounded-2xl border border-dashed border-slate-300 px-6 py-10">
+            <Icon name="sparkle" size={22} color="#94a3b8" />
+            <Text className="text-[14px] font-semibold text-slate-700">Seu plano começa com uma foto</Text>
+            <Text className="text-center text-[13px] text-slate-500">Fotografe uma página do caderno ou do livro. A IA organiza o conteúdo em matérias e o plano de estudos aparece aqui.</Text>
+          </View>
+        ) : (
+        /* Keyed by mode: the dashboard seeds its example inputs on mount, so
+            switching presentation on/off must remount it, not reuse state. */
         <StudentDashboard
           key={plan?.presentationMode ? 'presentation' : 'student'}
           subjects={subjects}
@@ -87,6 +96,7 @@ export default function TodayScreen() {
           activity={activity}
           presentation={Boolean(plan?.presentationMode)}
         />
+        )}
       </ScrollView>
     </View>
   );

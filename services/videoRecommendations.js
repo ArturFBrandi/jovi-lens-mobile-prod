@@ -69,7 +69,7 @@ export async function findVideoLessons(subject, preferences) {
     });
   } catch (error) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError' || error?.code) throw error;
-    throw new Error('Sem conexão para recomendar aulas agora. Confira a internet ou ative o modo demonstração.');
+    throw new Error('Sem conexão para recomendar aulas agora. Confira a internet e tente novamente.');
   }
 
   const data = await response.json().catch(() => ({}));

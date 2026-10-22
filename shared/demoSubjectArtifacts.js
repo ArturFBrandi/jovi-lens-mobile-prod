@@ -483,6 +483,23 @@ export function mergeDemoSubjectArtifacts(stored = {}) {
   return { artifacts: next, changed };
 }
 
+// Production builds (no Demo Mode) start empty: drops every seeded artifact a
+// demo build left in storage and keeps what the student generated.
+export function stripDemoSubjectArtifacts(stored = {}) {
+  let changed = false;
+  const artifacts = {};
+  Object.entries(stored).forEach(([subject, entries]) => {
+    const kept = {};
+    Object.entries(entries || {}).forEach(([key, artifact]) => {
+      if (isSeededDemoArtifact(artifact) || isSeededStudentState(artifact)) changed = true;
+      else kept[key] = artifact;
+    });
+    if (Object.keys(kept).length) artifacts[subject] = kept;
+    else changed = true;
+  });
+  return { artifacts, changed };
+}
+
 // Presentation mode only: stands in the seeded História result for an empty or
 // partial local attempt so the demo never shows 0%. Outside presentation mode
 // the student's own result is always what they see — replacing a real 40%

@@ -24,13 +24,19 @@ import {
   DEFAULT_LEARNING_PREFERENCES,
 } from '../services/storage.js';
 import { aggregateSubjects } from '../shared/subjects.js';
-import { mergeDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
+import { mergeDemoSubjectArtifacts, stripDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
 import { EMPTY_STUDY_CALENDAR, normalizeStudyCalendar } from '../shared/studyCalendar.js';
 import { demoAssetModule } from '../services/demoAssets.js';
 import { loadByok, refreshCredits } from '../services/aiAccess.js';
 import { isDemoMode } from '../services/env.js';
 import { restoreSession, subscribeUser } from '../services/googleAuth'; // no extension: Metro picks googleAuth.native.js on Android
-import { mergeSeedNotes, sampleMedia, sampleNotes, sampleRecords as samples, studyAssets } from '../shared/seedLibrary.js';
+import { mergeSeedNotes, sampleMedia, sampleNotes, sampleRecords, studyAssets } from '../shared/seedLibrary.js';
+
+// Production builds start empty (prod-web-android-spec.md D5): the sample
+// photos, notes and pre-generated subject content exist only in Demo Mode.
+const DEMO = isDemoMode();
+const samples = DEMO ? sampleRecords : [];
+const SAMPLE_NOTE_IDS = new Set(sampleNotes.map((note) => note.id));
 
 const AppDataContext = createContext(null);
 
@@ -48,15 +54,30 @@ if (__DEV__) {
 
 function getInitialNotes() {
   const stored = getNotes();
+  if (!DEMO) {
+    // Also cleans a phone that ran a demo build before this one.
+    const notes = stored.filter((note) => !note.seed && !SAMPLE_NOTE_IDS.has(note.id));
+    if (notes.length !== stored.length) persistNotes(notes);
+    return notes;
+  }
   const { notes, changed } = mergeSeedNotes(stored, getDismissedSeedNotes());
   if (changed) persistNotes(notes);
   return notes;
 }
 
 function getInitialSubjectArtifacts() {
-  const { artifacts, changed } = mergeDemoSubjectArtifacts(getSubjectArtifacts());
+  const { artifacts, changed } = (DEMO ? mergeDemoSubjectArtifacts : stripDemoSubjectArtifacts)(getSubjectArtifacts());
   if (changed) persistSubjectArtifacts(artifacts);
   return artifacts;
+}
+
+// A demo build's "Pro"/presentation plan does not carry over to production.
+function getInitialPlan() {
+  const plan = getPlan();
+  if (DEMO || !plan?.demo) return plan;
+  const free = { type: 'free' };
+  persistPlan(free);
+  return free;
 }
 
 export function AppDataProvider({ children }) {
@@ -83,7 +104,7 @@ export function AppDataProvider({ children }) {
     persistHistory(cleaned);
     return cleaned;
   });
-  const [plan, setPlanState] = useState(() => getPlan());
+  const [plan, setPlanState] = useState(getInitialPlan);
   const [user, setUserState] = useState(() => getUser());
   const [subjectArtifacts, setSubjectArtifactsState] = useState(getInitialSubjectArtifacts);
   const [learningPreferences, setLearningPreferencesState] = useState(() => getLearningPreferences());
@@ -330,14 +351,14 @@ export function AppDataProvider({ children }) {
     recordsRef.current = samples;
     setRecords(samples);
     setDismissedSeedNotes([]);
-    commitNotes(sampleNotes);
+    commitNotes(DEMO ? sampleNotes : []);
     setAiHistory([]);
     persistHistory([]);
     setPlanState({ type: 'free' });
     persistPlan({ type: 'free' });
     setUserState(null);
     persistUser(null);
-    const { artifacts } = mergeDemoSubjectArtifacts({});
+    const { artifacts } = DEMO ? mergeDemoSubjectArtifacts({}) : { artifacts: {} };
     setSubjectArtifactsState(artifacts);
     persistSubjectArtifacts(artifacts);
     setLearningPreferencesState(DEFAULT_LEARNING_PREFERENCES);

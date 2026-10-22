@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEMO_SUBJECT_ARTIFACTS, mergeDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
+import { DEMO_SUBJECT_ARTIFACTS, mergeDemoSubjectArtifacts, stripDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
 
 test('História demo studio is preloaded with presentation artifacts', () => {
   const history = DEMO_SUBJECT_ARTIFACTS.História;
@@ -79,4 +79,13 @@ test('a podcast the student generated survives the next launch', () => {
   const saved = { data: { formats: { ...seeded.formats, drive: mine } }, savedAt: '2026-09-26T20:00:00.000Z' };
   const { artifacts } = mergeDemoSubjectArtifacts({ História: { podcasts: saved } });
   assert.equal(artifacts.História.podcasts.data.formats.drive.title, 'Meu episódio');
+});
+
+test('stripDemoSubjectArtifacts removes seeded data a demo build left and keeps the student\'s own', () => {
+  const seeded = mergeDemoSubjectArtifacts({}).artifacts;
+  const own = { savedAt: '2026-10-01T10:00:00.000Z', data: { provider: 'minimax', mode: 'live', questions: [] } };
+  const { artifacts, changed } = stripDemoSubjectArtifacts({ ...seeded, História: { ...seeded.História, questions: own } });
+  assert.equal(changed, true);
+  assert.deepEqual(artifacts, { História: { questions: own } });
+  assert.deepEqual(stripDemoSubjectArtifacts(artifacts), { artifacts, changed: false });
 });

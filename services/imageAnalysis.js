@@ -98,7 +98,7 @@ async function requestAnalysis(src, { action = 'analyze', question = '', context
     response = await apiFetch('/api/analyze-image', { method: 'POST', body: JSON.stringify(payload), signal });
   } catch (error) {
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || error?.code) throw error;
-    throw new Error('Sem conexão no momento. Confira a internet ou ative o modo demonstração.');
+    throw new Error('Sem conexão no momento. Confira a internet e tente novamente.');
   }
 
   const data = await response.json().catch(() => ({}));
