@@ -1,4 +1,4 @@
-import { Image } from 'react-native';
+import { Image, Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
@@ -32,6 +32,9 @@ async function toLoadableUri(uri) {
     return { uri: asset.localUri || asset.uri, cleanup: null };
   }
   if (typeof uri !== 'string' || !uri.startsWith('data:')) return { uri: rebaseMediaUri(uri), cleanup: null };
+  // Browsers load data: URIs directly, and expo-file-system has no web
+  // implementation ("writeAsStringAsync is not available on web").
+  if (Platform.OS === 'web') return { uri, cleanup: null };
   const base64 = uri.slice(uri.indexOf(',') + 1);
   const target = `${FileSystem.cacheDirectory}jovi-ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
   await FileSystem.writeAsStringAsync(target, base64, { encoding: FileSystem.EncodingType.Base64 });

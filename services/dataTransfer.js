@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { demoAssetModule } from './demoAssets.js';
@@ -26,7 +27,8 @@ export async function createBackup({ records = [], notes = [], aiHistory = [], p
   for (const record of own) {
     if (record.mediaType === 'video') { skippedVideos += 1; continue; }
     if (mediaChars >= MAX_EXPORT_MEDIA_CHARS) { skippedForSize += 1; continue; }
-    const src = await readMediaAsDataUri(record);
+    // Web keeps photos as data: URIs (no files on disk); native reads the file.
+    const src = isSafeDataUri(record.src) ? record.src : await readMediaAsDataUri(record);
     if (!src) { unreadable += 1; continue; }
     if (mediaChars + src.length > MAX_EXPORT_MEDIA_CHARS) { skippedForSize += 1; continue; }
     mediaChars += src.length;
@@ -58,6 +60,16 @@ export async function createBackup({ records = [], notes = [], aiHistory = [], p
 // Returns whether the share sheet was actually offered.
 export async function downloadBackup(data) {
   const filename = `jovi-lens-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  if (Platform.OS === 'web') {
+    // expo-file-system has no web implementation; the browser downloads a Blob.
+    const url = globalThis.URL.createObjectURL(new globalThis.Blob([JSON.stringify(data)], { type: 'application/json' }));
+    const link = globalThis.document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => globalThis.URL.revokeObjectURL(url), 1000);
+    return true;
+  }
   const path = `${FileSystem.cacheDirectory}${filename}`;
   await FileSystem.writeAsStringAsync(path, JSON.stringify(data));
   if (!(await Sharing.isAvailableAsync())) return false;
@@ -128,7 +140,9 @@ export async function readBackupFile(file) {
   if (info?.size && info.size > MAX_IMPORT_BYTES) throw new Error('Esse backup é grande demais para importar.');
   let data;
   try {
-    data = JSON.parse(await FileSystem.readAsStringAsync(file.uri));
+    // The web picker hands back a blob: URL; expo-file-system cannot read it there.
+    const text = Platform.OS === 'web' ? await (await fetch(file.uri)).text() : await FileSystem.readAsStringAsync(file.uri);
+    data = JSON.parse(text);
   } catch {
     throw new Error('O arquivo selecionado não é um backup JSON válido.');
   }
