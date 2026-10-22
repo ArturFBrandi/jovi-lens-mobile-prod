@@ -1,6 +1,7 @@
 import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import TesterGate from '../components/TesterGate.jsx';
 import { AppDataProvider } from '../context/AppDataContext.jsx';
 
 export default function RootLayout() {
@@ -11,9 +12,11 @@ export default function RootLayout() {
           screens whenever the phone was in dark mode. The camera screen
           switches it to light while focused. */}
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-      </Stack>
+      <TesterGate>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+        </Stack>
+      </TesterGate>
     </AppDataProvider>
   );
 }

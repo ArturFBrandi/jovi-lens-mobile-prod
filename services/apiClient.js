@@ -1,15 +1,16 @@
-// The web app's services call `fetch('/api/...')` with a relative URL, which
-// resolves against the page's own origin — free in a browser, meaningless in
-// React Native (there is no origin). Every backend call here goes through
-// apiUrl() instead, which prefixes EXPO_PUBLIC_API_BASE_URL (set in the
-// repo-root .env — see .env.example; point it at your machine's LAN IP for
-// `npm run dev:api` on web, or at the deployed backend).
+// Every backend call goes through apiUrl(), which prefixes
+// EXPO_PUBLIC_API_BASE_URL (set in the repo-root .env — see .env.example). The
+// production web build leaves it empty and calls its own origin with relative
+// /api/... URLs, so the browser sends the tester cookie (prod-web-android-spec.md §3).
+import { Platform } from 'react-native';
 import { getSessionToken, setSessionToken } from './storage.js';
+import { reportTesterLocked } from './testerAccess.js';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || '';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 export function apiUrl(path) {
+  if (!API_BASE_URL && Platform.OS === 'web') return path;
   if (!API_BASE_URL) {
     throw new Error(
       'EXPO_PUBLIC_API_BASE_URL não configurada. Defina-a no .env na raiz do repositório: EXPO_PUBLIC_API_BASE_URL=http://SEU_IP_LOCAL:8787 (ou a URL do backend publicado) — veja .env.example.'
@@ -42,13 +43,19 @@ function linkedSignal(outer, timeoutMs) {
 export async function apiFetch(path, { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...options } = {}) {
   const headers = { ...options.headers };
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  if (process.env.EXPO_PUBLIC_JOVI_API_KEY) headers['x-api-key'] = process.env.EXPO_PUBLIC_JOVI_API_KEY;
+  // Web is authorized by the tester cookie; the shared app key stays out of its bundle.
+  if (Platform.OS !== 'web' && process.env.EXPO_PUBLIC_JOVI_API_KEY) headers['x-api-key'] = process.env.EXPO_PUBLIC_JOVI_API_KEY;
   const session = getSessionToken();
   if (session) headers['Authorization'] = `Bearer ${session}`;
 
   const link = linkedSignal(signal, timeoutMs);
   try {
-    const response = await fetch(apiUrl(path), { ...options, headers, signal: link.signal });
+    const response = await fetch(apiUrl(path), { credentials: 'same-origin', ...options, headers, signal: link.signal });
+    // Web: an expired or revoked tester cookie sends the tester back to the access screen.
+    if (Platform.OS === 'web' && response.status === 401) {
+      const payload = await response.clone().json().catch(() => ({}));
+      if (payload.code === 'SIGN_IN_REQUIRED' || payload.code === 'API_KEY_INVALID') reportTesterLocked();
+    }
     // An expired/revoked session is rejected on every call until it is
     // dropped; without this the user stays stuck on 401 until they find
     // "Sair" in Perfil. The next call falls back to anonymous limits.

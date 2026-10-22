@@ -1,6 +1,11 @@
-/*
-!/api
-!/shared
-!/public
-!/vercel.json
-!/package.json
+# Vercel builds the Expo web export (vercel.json) and deploys api/. The native
+# Android project, the retired web/ client and local-only files stay out.
+/android
+/ios
+/web
+/tests
+/scripts
+/server
+/.env
+/.env.*
+!/.env.example

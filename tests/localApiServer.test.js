@@ -118,3 +118,22 @@ test('web tester flow: unlock without an API key, then AI calls ride on the cook
     assert.equal(without.status, 401);
   }, { JOVI_API_KEY: 'chave-certa', JOVI_LOCAL_DEV_BYPASS: 'false', JOVI_TESTER_KEY: 'k'.repeat(64), JOVI_TESTER_ACCESS_CODE: 'jovi-2026' });
 });
+
+test('JOVI_WEB_DIST serves the web export with an SPA fallback and no path traversal', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dist = await mkdtemp(join(tmpdir(), 'jovi-web-'));
+  await writeFile(join(dist, 'index.html'), '<div id="root"></div>');
+  await writeFile(join(dist, 'privacy.html'), 'privacidade');
+  await withServer(async (base) => {
+    const root = await fetch(`${base}/`);
+    assert.equal(root.status, 200);
+    assert.match(root.headers.get('content-type'), /text\/html/);
+    assert.equal(await (await fetch(`${base}/privacy.html`)).text(), 'privacidade');
+    assert.equal(await (await fetch(`${base}/notes`)).text(), '<div id="root"></div>');
+    // fetch normalizes literal ../ away; an encoded slash survives to the server.
+    assert.equal((await fetch(`${base}/..%2f..%2fetc%2fpasswd`)).status, 403);
+    assert.equal((await fetch(`${base}/api/nope`)).status, 404, '/api paths never fall back to the page');
+  }, { JOVI_WEB_DIST: dist });
+});

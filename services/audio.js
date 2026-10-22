@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Speech from 'expo-speech';
 import { isDemoMode } from './env.js';
 import { apiFetch } from './apiClient.js';
+import { chunkText, TTS_CHUNK_CHARS } from '../shared/textChunks.js';
 
 // "Browser" pitch differentiates speakers when only one pt-BR voice exists for
 // the on-device fallback (expo-speech, RN's equivalent of speechSynthesis).
@@ -105,28 +106,36 @@ async function requestLiveTts(text, voice) {
   const cached = await readCache(key);
   if (cached) return cached;
 
-  let response;
-  try {
-    response = await apiFetch('/api/tts', { method: 'POST', body: JSON.stringify({ text, voice }), timeoutMs: ttsTimeoutFor(text) });
-  } catch (error) {
-    // One flaky request used to disable live voice for the whole session.
-    // Only give up session-wide after repeated network failures; a slow
-    // (timed-out) segment says nothing about the next one.
-    if (error?.name !== 'TimeoutError') {
-      consecutiveFailures += 1;
-      if (consecutiveFailures >= 2) liveTtsAvailable = false;
+  // /api/tts caps each request at TTS_CHUNK_CHARS, so a long segment is sent
+  // in sentence-aligned chunks and their audio parts are played in order.
+  const parts = [];
+  let mime = 'audio/mpeg';
+  for (const chunk of chunkText(text, TTS_CHUNK_CHARS)) {
+    let response;
+    try {
+      response = await apiFetch('/api/tts', { method: 'POST', body: JSON.stringify({ text: chunk, voice }), timeoutMs: ttsTimeoutFor(chunk) });
+    } catch (error) {
+      // One flaky request used to disable live voice for the whole session.
+      // Only give up session-wide after repeated network failures; a slow
+      // (timed-out) segment says nothing about the next one.
+      if (error?.name !== 'TimeoutError') {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 2) liveTtsAvailable = false;
+      }
+      return null;
     }
-    return null;
+    const data = await response.json().catch(() => ({}));
+    // Not configured, or server voice not available to this caller (a free
+    // Android account without its own key): use the device voice from now on.
+    if (response.status === 503 || data.code === 'AI_NOT_CONFIGURED' || data.code === 'BYOK_REQUIRED') { liveTtsAvailable = false; return null; }
+    // Rate limit or provider error: this narration continues with the device
+    // voice instead of stopping mid-podcast on an error banner.
+    if (!response.ok) return null;
+    mime = data.mimeType || mime;
+    parts.push(...(Array.isArray(data.parts) ? data.parts : []));
   }
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 503 || data.code === 'AI_NOT_CONFIGURED') { liveTtsAvailable = false; return null; }
-  // Rate limit or provider error: this narration continues with the device
-  // voice instead of stopping mid-podcast on an error banner.
-  if (!response.ok) return null;
   consecutiveFailures = 0;
   liveTtsAvailable = true;
-  const mime = data.mimeType || 'audio/mpeg';
-  const parts = Array.isArray(data.parts) ? data.parts : [];
   return (await writeCache(key, parts, mime)) || parts.map((b64) => `data:${mime};base64,${b64}`);
 }
 

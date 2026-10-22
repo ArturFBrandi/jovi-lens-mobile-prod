@@ -1,5 +1,7 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize, sep } from 'node:path';
 import { isIP } from 'node:net';
 import analyzeImage from '../api/analyze-image.js';
 import subjectAI from '../api/subject-ai.js';
@@ -135,6 +137,45 @@ function createResponseAdapter(response) {
   return adapter;
 }
 
+const STATIC_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml',
+  '.ttf': 'font/ttf',
+  '.woff2': 'font/woff2',
+};
+
+// Serves the Expo web export from JOVI_WEB_DIST on the API's own origin, the
+// way Vercel does in production (prod-web-android-spec.md §3.1), so the tester
+// cookie flow can be tried locally. Unknown paths get index.html (SPA routes).
+async function serveStatic(response, distDir, path) {
+  const root = normalize(distDir);
+  let file = normalize(join(root, decodeURIComponent(path)));
+  if (file !== root && !file.startsWith(root + sep)) {
+    sendJson(response, 403, { message: 'Caminho inválido.' });
+    return;
+  }
+  let body;
+  try {
+    body = await readFile(file);
+  } catch {
+    file = join(root, 'index.html');
+    body = await readFile(file).catch(() => null);
+  }
+  if (!body) {
+    sendJson(response, 404, { message: 'Build web não encontrado em JOVI_WEB_DIST.' });
+    return;
+  }
+  response.statusCode = 200;
+  response.setHeader('Content-Type', STATIC_TYPES[extname(file)] || 'application/octet-stream');
+  response.end(body);
+}
+
 // One JSON line per request: enough to correlate a client error (the app can
 // show the X-Request-Id) with the server-side failure without logging bodies.
 function defaultLog(entry) {
@@ -143,7 +184,7 @@ function defaultLog(entry) {
   else console.log(line);
 }
 
-export function createLocalApiServer({ webUrl = process.env.JOVI_WEB_URL || 'http://127.0.0.1:5173', log = defaultLog } = {}) {
+export function createLocalApiServer({ webUrl = process.env.JOVI_WEB_URL || 'http://127.0.0.1:5173', webDist = process.env.JOVI_WEB_DIST || '', log = defaultLog } = {}) {
   const allowedHosts = new Set(String(process.env.JOVI_ALLOWED_HOSTS || '').split(',').map((host) => host.trim().toLowerCase()).filter(Boolean));
   return http.createServer(async (request, response) => {
     const requestId = randomUUID();
@@ -164,6 +205,11 @@ export function createLocalApiServer({ webUrl = process.env.JOVI_WEB_URL || 'htt
     if (request.method === 'OPTIONS') {
       response.statusCode = 204;
       response.end();
+      return;
+    }
+
+    if (webDist && request.method === 'GET' && !path.startsWith('/api/')) {
+      await serveStatic(response, webDist, path === '/' ? '/index.html' : path);
       return;
     }
 

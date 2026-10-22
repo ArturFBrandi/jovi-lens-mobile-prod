@@ -48,6 +48,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build:web": "APP_VARIANT=web EXPO_PUBLIC_JOVI_LENS_DEMO_MODE=false EXPO_PUBLIC_API_BASE_URL= expo export --platform web --output-dir dist",
     "test": "node --test \"tests/**/*.test.js\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

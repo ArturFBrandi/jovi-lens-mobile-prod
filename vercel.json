@@ -1,9 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "echo \"backend has no dependencies\"",
-  "buildCommand": "echo \"no build\"",
-  "outputDirectory": "public",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:web",
+  "outputDirectory": "dist",
   "regions": ["gru1"],
-  "functions": { "api/**/*.js": { "maxDuration": 60 } }
+  "functions": { "api/**/*.js": { "maxDuration": 60 } },
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
 }
