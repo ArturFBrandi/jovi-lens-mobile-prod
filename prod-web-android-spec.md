@@ -5,7 +5,7 @@ the app UI reset to `main`'s demo look on top of the production backend.
 
 This spec **supersedes** [`prod-implementation-spec.md`](prod-implementation-spec.md) and
 [`prod-plan.md`](prod-plan.md) wherever they conflict. The biggest change is that **web now ships**.
-Backend details that this file doesn't change (the guard pipeline, sessions, Play Integrity, store,
+**Play Integrity is dropped** (D8, §4.3). Backend details that this file doesn't change (the guard pipeline, sessions, store,
 providers, logging) stay as written there. This file says *what* each product must be. Decisions are
 recorded in §9 and referenced as D1–D7.
 
@@ -19,7 +19,7 @@ recorded in §9 and referenced as D1–D7.
 | Delivered as | Static Expo web export, served by the API's Vercel project | `com.jovilens.app`, EAS `production` profile | `com.jovilens.app.demo`, EAS `presentation` profile |
 | AI | Real, through the production backend | Real, through the production backend | Offline demo responses |
 | Access | **Tester key** in the server `.env`. Testers unlock with an access link/code (§3.2). No Google login | **Google sign-in required** | None |
-| Limits | **None per tester.** Credits, sign-in and integrity are bypassed. Global cap of 3000 calls/day (D2) | **3 AI interactions per Google account**, for life. Unlimited with the user's own key (BYOK, D7) | — |
+| Limits | **None per tester.** Credits and sign-in are bypassed. Global cap of 3000 calls/day (D2) | **3 AI interactions per Google account**, for life. Unlimited with the user's own key (BYOK, D7) | — |
 | Data | Starts empty (D5) | Starts empty (D5) | Seeded sample library |
 | Codebase | Same Expo Router app (`app/`, `components/`, `services/`) | Same | Same |
 
@@ -50,8 +50,7 @@ only differences allowed are listed in §2.2.
 | P2 | Running out of AI | Never happens (except the global cap, §3.2) | Shows the "Interações esgotadas" state (§4.4) | 3-credit cap |
 | P3 | Camera | Browser camera / file picker (`camera.web.jsx`) | Native camera | Platform |
 | P4 | Speech (podcast TTS, voice questions) | Server TTS/STT (D3) | On-device `expo-speech` / `expo-speech-recognition`. Server TTS/STT only with a BYOK key whose provider supports it | Cost control on the free tier |
-| P5 | Integrity | Not used | Play Integrity on every AI call | Only exists on Android |
-| P6 | Access screen | One screen asking for the access code, shown until the tester cookie is valid (§3.2) | None | Protects the tester key |
+| P5 | Access screen | One screen asking for the access code, shown until the tester cookie is valid (§3.2) | None | Protects the tester key |
 
 Any other visible difference is a bug. The parity QA in §10 checks this.
 
@@ -102,7 +101,7 @@ signed, `HttpOnly` cookie. That cookie is what bypasses the limits.
 
 **Unlock flow.**
 1. The tester opens `https://<domain>/?acesso=<code>` (the distributed link) or types the code on the
-   web-only access screen (P6).
+   web-only access screen (P5).
 2. The web app calls `POST /api/tester/unlock` with `{ code }` and then removes `acesso` from the URL
    (`history.replaceState`).
 3. The server compares `code` to `JOVI_TESTER_ACCESS_CODE` in constant time. A wrong code returns
@@ -120,7 +119,7 @@ hasn't expired, then `ctx.tester = true` and `ctx.user = { sub: 'tester:web', em
 An invalid or expired cookie is ignored, so the request continues down the normal path and fails
 there with `SIGN_IN_REQUIRED`, which the web app maps to the access screen.
 
-With `ctx.tester = true`, the guard **skips** session (7), integrity (8), the per-user burst limit (9),
+With `ctx.tester = true`, the guard **skips** session (7), the per-user burst limit (9),
 the BYOK requirement (10) and credit reservation (13). TTS and transcription use the **server**
 provider, the same as the local dev bypass. Idempotency (12) still runs, because it prevents double
 charges on retries. Because the cookie is `SameSite=Strict` and bound to the same origin, other sites
@@ -182,10 +181,24 @@ general-purpose AI.
 
 - Resetting a tester: `SET credits:<sub> 3` in the Upstash console (runbook).
 
-### 4.3 Integrity and hardening
+### 4.3 No Play Integrity (D8)
 
-Play Integrity standard requests stay on (`JOVI_REQUIRE_INTEGRITY=true`), along with the release
-signing, `allowBackup=false` and the blocked permissions, all as in prod spec §5.8 and §6.13.
+Play Integrity is **not used**. Distribution is limited, and there's no time for the Google Cloud,
+service-account and certificate setup (prod spec H1b, H2, H5).
+- Server: `JOVI_REQUIRE_INTEGRITY` stays unset or `false`. Guard step 8 is already skipped then, so
+  no backend code changes. `PLAY_INTEGRITY_*` vars aren't needed.
+- App: don't restore `services/integrity.js`. Send no `x-play-integrity-token` and don't warm up a
+  token provider. Remove `EXPO_PUBLIC_PLAY_INTEGRITY_PROJECT_NUMBER` from `eas.json`.
+- `modules/jovi-native` (integrity + calendar) is then unused, because the calendar is also out
+  (D4). Delete it in M4, along with the `READ_CALENDAR` and `POST_NOTIFICATIONS` permissions and
+  the `expo-notifications` plugin.
+- Kept: release signing, `allowBackup=false`, HTTPS-only production builds.
+
+**Accepted risk.** Without integrity, someone can extract the shared `x-api-key` from the APK and
+call the API from a script. What still limits abuse: every AI call needs a Google sign-in, each
+account has only 3 credits, new accounts are rate-limited per IP per day
+(`JOVI_SIGNUP_LIMIT_PER_IP_DAY`), and burst limits apply per user. Rotating `JOVI_API_KEY` means
+shipping a new APK.
 
 ### 4.4 Credit UI
 
@@ -204,7 +217,7 @@ Keep the BYOK design from prod spec §5.10 and §6.6 (commit `c7de091`), restyle
   in `expo-secure-store` (already installed), sent per request as `x-ai-provider` / `x-ai-key`, and
   never stored or logged server-side.
 - A BYOK call costs no credits and is allowed with 0 credits left. Google sign-in is **still
-  required**, because sessions, integrity and burst limits apply to every Android call.
+  required**, because sessions and burst limits apply to every Android call.
 - With a BYOK key whose provider supports it, TTS/STT use the server route with that key. Otherwise
   they use the on-device engines.
 - UI: an expandable section inside the Copilot card. It holds a provider picker, the key field,
@@ -241,8 +254,8 @@ accepts a valid tester cookie in place of `x-api-key`.
 
 ### 5.3 Android (`eas.json` → `production`)
 
-Unchanged from the current `eas.json`: demo off, API base URL, Google web client ID, Play Integrity
-project number, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
+Current `eas.json` minus the Play Integrity project number (D8): demo off, API base URL, Google web
+client ID, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
 
 ---
 
@@ -250,7 +263,7 @@ project number, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
 
 1. New `api/_lib/tester.js`: sign and verify the cookie, compute `codeVersion`, and do the
    constant-time code compare.
-2. New route `POST /api/tester/unlock` (auth none, no integrity, cost 0, byok forbidden, per-IP
+2. New route `POST /api/tester/unlock` (auth none, cost 0, byok forbidden, per-IP
    failure bucket). It sets the cookie (§3.2 step 4). `POST /api/tester/lock` clears it.
 3. `api/_lib/guard.js`: step 4b (tester cookie), API-key step 4 satisfied by a valid tester cookie,
    the daily cap, and the `TESTER_CODE_INVALID` and `TESTER_CAP_REACHED` codes.
@@ -260,17 +273,17 @@ project number, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
 6. `vercel.json`: a build command that runs the Expo web export into `public/` (keeping
    `privacy.html`), and a SPA rewrite for non-`/api` paths.
 7. Tests: unlock with the right code sets the cookie and a wrong code → 401, then 429 after 10. A
-   valid cookie bypasses session, integrity and credits. A tampered or expired cookie, or one from
+   valid cookie bypasses session and credits. A tampered or expired cookie, or one from
    before a code change, → normal path. Cap → 429. Code, cookie and key never appear in logs.
 
 ## 7. Client changes
 
 1. `services/env.js`: add `isWebTester()` (`Platform.OS === 'web'` plus a tester key present).
-2. `services/apiClient.js`: restore the `c7de091` version, which adds session, integrity,
-   idempotency and BYOK headers and `code`-carrying errors. On web, send `credentials: 'same-origin'`
-   so the tester cookie goes along, and skip the session and integrity headers.
+2. `services/apiClient.js`: restore the `c7de091` version, which adds session, idempotency and
+   BYOK headers and `code`-carrying errors, **without** the integrity token (D8). On web, send
+   `credentials: 'same-origin'` so the tester cookie goes along, and skip the session header.
 3. Restore `services/aiAccess.js` (credits **and** BYOK) and `services/apiErrors.js` from `c7de091`.
-4. Web access screen (P6) plus `services/testerAccess.js`: read `?acesso=`, call unlock, strip the
+4. Web access screen (P5) plus `services/testerAccess.js`: read `?acesso=`, call unlock, strip the
    param, check `/api/me`. Map `SIGN_IN_REQUIRED` on web to the access screen.
 5. `services/audio.js`: split TTS text at 2000 characters with `shared/textChunks.js`. The server
    rejects longer text.
@@ -303,10 +316,11 @@ project number, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
 | D5 | Sample library in production | **Not kept.** Production builds start empty, with empty states |
 | D6 | Does answer grading cost a credit? | **No, it's free** |
 | D7 | BYOK on Android | **Kept** (§4.5) |
+| D8 | Play Integrity | **Dropped.** Limited distribution, no time to set it up (§4.3) |
 
 ## 10. Parity QA (run on both builds, side by side)
 
-1. Every tab (Hoje, Câmera, Galeria, Notas, Perfil) matches `main`'s layout, apart from P1–P6. A
+1. Every tab (Hoje, Câmera, Galeria, Notas, Perfil) matches `main`'s layout, apart from P1–P5. A
    fresh install starts empty, with empty states, and there's no Outlook card.
 2. Capture or import a photo → analyze → save a note → open the subject's Estúdio → generate
    questions, an exam, a plan, a podcast and a lesson → get a video recommendation.
