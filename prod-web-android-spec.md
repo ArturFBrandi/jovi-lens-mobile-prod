@@ -232,7 +232,8 @@ Keep the BYOK design from prod spec §5.10 and §6.6 (commit `c7de091`), restyle
 
 ### 5.1 API project (Vercel, plus the root `.env` locally)
 
-Everything in prod spec §3.1, plus:
+Everything in prod spec §3.1, except that the server provider is MiniMax (D9: `AI_PROVIDER=minimax`,
+`MINIMAX_API_KEY`) and no `PLAY_INTEGRITY_*` vars are needed (D8). Plus:
 
 | Var | Value | Notes |
 |---|---|---|
@@ -317,6 +318,7 @@ client ID, and `EXPO_PUBLIC_JOVI_API_KEY` as a sensitive EAS env var.
 | D6 | Does answer grading cost a credit? | **No, it's free** |
 | D7 | BYOK on Android | **Kept** (§4.5) |
 | D8 | Play Integrity | **Dropped.** Limited distribution, no time to set it up (§4.3) |
+| D9 | Server-paid AI provider | **MiniMax** (`AI_PROVIDER=minimax`, `MINIMAX_API_KEY`) serves free credits and web testers, instead of Gemini |
 
 ## 10. Parity QA (run on both builds, side by side)
 

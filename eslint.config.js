@@ -78,7 +78,7 @@ export default [
 
   // React Native app (repo root).
   {
-    files: ['app/**/*.{js,jsx}', 'components/**/*.{js,jsx}', 'hooks/**/*.{js,jsx}', 'context/**/*.{js,jsx}', 'services/**/*.{js,jsx}', 'modules/**/*.js'],
+    files: ['app/**/*.{js,jsx}', 'components/**/*.{js,jsx}', 'hooks/**/*.{js,jsx}', 'context/**/*.{js,jsx}', 'services/**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

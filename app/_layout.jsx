@@ -1,6 +1,7 @@
 import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import CreditsExhaustedNotice from '../components/CreditsExhaustedNotice.jsx';
 import TesterGate from '../components/TesterGate.jsx';
 import { AppDataProvider } from '../context/AppDataContext.jsx';
 
@@ -16,6 +17,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
         </Stack>
+        <CreditsExhaustedNotice />
       </TesterGate>
     </AppDataProvider>
   );

@@ -10,8 +10,7 @@
         "APP_VARIANT": "development",
         "EXPO_PUBLIC_JOVI_LENS_DEMO_MODE": "false",
         "EXPO_PUBLIC_API_BASE_URL": "http://127.0.0.1:8787",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "<GOOGLE_WEB_CLIENT_ID>",
-        "EXPO_PUBLIC_PLAY_INTEGRITY_PROJECT_NUMBER": "<PLAY_INTEGRITY_PROJECT_NUMBER>"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "301410724957-kk4jv0aaub13btl1mpdu1h711t4sk0op.apps.googleusercontent.com"
       }
     },
     "production": {
@@ -23,8 +22,7 @@
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_JOVI_LENS_DEMO_MODE": "false",
         "EXPO_PUBLIC_API_BASE_URL": "https://<VERCEL_DOMAIN>",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "<GOOGLE_WEB_CLIENT_ID>",
-        "EXPO_PUBLIC_PLAY_INTEGRITY_PROJECT_NUMBER": "<PLAY_INTEGRITY_PROJECT_NUMBER>",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "301410724957-kk4jv0aaub13btl1mpdu1h711t4sk0op.apps.googleusercontent.com",
         "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
       }
     },

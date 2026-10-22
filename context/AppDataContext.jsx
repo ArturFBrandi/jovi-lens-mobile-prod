@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import {
   deleteMediaRecord,
   clearMediaRecords,
@@ -26,6 +27,9 @@ import { aggregateSubjects } from '../shared/subjects.js';
 import { mergeDemoSubjectArtifacts } from '../shared/demoSubjectArtifacts.js';
 import { EMPTY_STUDY_CALENDAR, normalizeStudyCalendar } from '../shared/studyCalendar.js';
 import { demoAssetModule } from '../services/demoAssets.js';
+import { loadByok, refreshCredits } from '../services/aiAccess.js';
+import { isDemoMode } from '../services/env.js';
+import { restoreSession, subscribeUser } from '../services/googleAuth'; // no extension: Metro picks googleAuth.native.js on Android
 import { mergeSeedNotes, sampleMedia, sampleNotes, sampleRecords as samples, studyAssets } from '../shared/seedLibrary.js';
 
 const AppDataContext = createContext(null);
@@ -263,6 +267,24 @@ export function AppDataProvider({ children }) {
   const setUser = useCallback((next) => {
     setUserState(next);
     persistUser(next);
+  }, []);
+
+  // Google sign-in can happen outside Perfil (the prompt before an AI call,
+  // silent session renewal); googleAuth persists the user and tells us here.
+  useEffect(() => subscribeUser((next) => setUserState(next)), []);
+
+  // Production builds: load the saved BYOK summary and the credits left on
+  // launch and whenever the app comes back to the foreground.
+  useEffect(() => {
+    if (isDemoMode()) return undefined;
+    restoreSession().then(() => {
+      loadByok();
+      refreshCredits();
+    });
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refreshCredits();
+    });
+    return () => subscription.remove();
   }, []);
 
   const setLearningPreferences = useCallback((next) => {

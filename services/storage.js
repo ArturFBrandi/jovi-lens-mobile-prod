@@ -268,7 +268,7 @@ export const getUser = () => readJson(USER_KEY, null);
 export const setUser = (user) => {
   try {
     if (user) storage.set(USER_KEY, JSON.stringify(user));
-    else storage.delete(USER_KEY);
+    else storage.remove(USER_KEY);
   } catch {
     // storage unavailable
   }
@@ -287,7 +287,7 @@ export const getSessionToken = () => {
 export const setSessionToken = (token) => {
   try {
     if (token) storage.set(SESSION_KEY, token);
-    else storage.delete(SESSION_KEY);
+    else storage.remove(SESSION_KEY);
   } catch {
     // storage unavailable
   }

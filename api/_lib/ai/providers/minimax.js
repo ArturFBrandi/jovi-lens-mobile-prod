@@ -11,7 +11,13 @@ const DEFAULT_TTS_BASE_URL = 'https://api-uw.minimax.io';
 
 // speech-2.8-hd is MiniMax's current flagship TTS model as of this writing.
 // MiniMax's catalog moves fast, so override via env if this ages out.
-const DEFAULT_CHAT_MODEL = 'MiniMax-M3';
+// Text-only calls (follow-up questions, subject content) use MiniMax-Text-01:
+// measured 2026-10-22, M3 and M2.x broke about half of their pt-BR replies
+// with mixed-in English/Chinese tokens ("realizationava", "fábrica de九江"),
+// while Text-01 gave 0/9 slips. Calls carrying an image keep M3, whose photo
+// analysis is far more detailed (Text-01 accepts images but is shallow).
+const DEFAULT_CHAT_MODEL = 'MiniMax-Text-01';
+const DEFAULT_VISION_MODEL = 'MiniMax-M3';
 const DEFAULT_TTS_MODEL = 'speech-2.8-hd';
 
 // Confirmed live via /v1/get_voice against the account's own key — MiniMax's
@@ -38,13 +44,15 @@ function getConfig(credentials) {
     baseUrl: (process.env.MINIMAX_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ''),
     ttsBaseUrl: (process.env.MINIMAX_TTS_BASE_URL || DEFAULT_TTS_BASE_URL).replace(/\/$/, ''),
     chatModel: process.env.MINIMAX_CHAT_MODEL || DEFAULT_CHAT_MODEL,
+    visionModel: process.env.MINIMAX_VISION_MODEL || DEFAULT_VISION_MODEL,
     ttsModel: process.env.MINIMAX_TTS_MODEL || DEFAULT_TTS_MODEL,
   };
 }
 
 export function isConfigured(capability, credentials) {
   const config = getConfig(credentials);
-  if (capability === 'chat' || capability === 'vision') return Boolean(config.apiKey && config.chatModel);
+  if (capability === 'chat') return Boolean(config.apiKey && config.chatModel);
+  if (capability === 'vision') return Boolean(config.apiKey && config.visionModel);
   if (capability === 'tts') return Boolean(config.apiKey && config.ttsModel);
   return false;
 }
@@ -62,7 +70,9 @@ function checkBaseResp(payload, message) {
 
 export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, credentials }) {
   const config = getConfig(credentials);
-  if (!isConfigured('chat', credentials)) throw notConfigured('MiniMax não está configurado.');
+  const hasImage = messages.some((message) => Array.isArray(message.content) && message.content.some((part) => part?.type === 'image_url'));
+  const model = hasImage ? config.visionModel : config.chatModel;
+  if (!isConfigured(hasImage ? 'vision' : 'chat', credentials)) throw notConfigured('MiniMax não está configurado.');
 
   const { controller, clear } = abortableTimeout(timeoutMs);
   try {
@@ -74,7 +84,7 @@ export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, 
       // for this kind of vision+structured-JSON task — measured 35.7s with it
       // on vs. 7.8s disabled, for the exact same prompt. Disabling it keeps
       // responses well under the abort timeout without hurting output quality.
-      body: JSON.stringify({ model: config.chatModel, messages, temperature: 0.2, max_completion_tokens: maxTokens, thinking: { type: 'disabled' } }),
+      body: JSON.stringify({ model, messages, temperature: 0.2, max_completion_tokens: maxTokens, thinking: { type: 'disabled' } }),
       signal: controller.signal,
     });
 
@@ -85,7 +95,7 @@ export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, 
     const text = payload?.choices?.[0]?.message?.content;
     if (!text || typeof text !== 'string') throw emptyResponseError('A IA não retornou conteúdo.');
 
-    return { text, model: config.chatModel, provider: 'minimax' };
+    return { text, model, provider: 'minimax' };
   } catch (error) {
     if (error?.name === 'AbortError') throw timeoutError('Tempo limite da análise excedido.');
     throw error;

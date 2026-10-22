@@ -250,6 +250,7 @@ export default function SmartImageSheet({ record, initialView = 'viewer', onClos
     } catch (err) {
       if (!isAbortError(err)) flash(err.message || 'Não foi possível enviar a pergunta.');
     } finally {
+      askingRef.current = false;
       setActionLoading(false);
       if (requestAbortRef.current === controller) requestAbortRef.current = null;
     }
