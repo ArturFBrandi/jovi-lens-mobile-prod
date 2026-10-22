@@ -39,13 +39,13 @@ async function grade(sub, body) {
   return res;
 }
 
-test('the subject-ai handler grades a written answer (demo mode) and charges 1 credit', () => withEnv({ ...BASE_ENV, JOVI_LENS_DEMO_MODE: 'true' }, async () => {
+test('the subject-ai handler grades a written answer (demo mode) without charging a credit', () => withEnv({ ...BASE_ENV, JOVI_LENS_DEMO_MODE: 'true' }, async () => {
   resetMemoryStore();
   const res = await grade('grader', { action: 'grade', subject: { name: 'História', notes: [] }, grading: { question: 'Como a fábrica mudou o trabalho?', modelAnswer, answer: 'A fábrica juntou máquinas e trabalhadores e dividiu a produção.' } });
   assert.equal(res.statusCode, 200);
   assert.ok(res.body.score > 0 && res.body.score <= 10);
   assert.ok(typeof res.body.feedback === 'string' && res.body.feedback.length > 0);
-  assert.equal(res.headers['x-jovi-credits-remaining'], '2');
+  assert.equal(res.headers['x-jovi-credits-remaining'], '3', 'grading is free (prod-web-android-spec.md D6)');
 
   const missing = await grade('grader', { action: 'grade', subject: { name: 'História' }, grading: { question: 'x', modelAnswer, answer: '' } });
   assert.equal(missing.statusCode, 400);

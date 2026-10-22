@@ -106,3 +106,15 @@ test('an oversized chunked body gets a 413 answer instead of a reset', async () 
     assert.equal(status, 413);
   });
 });
+
+test('web tester flow: unlock without an API key, then AI calls ride on the cookie', async () => {
+  await withServer(async (base) => {
+    const unlocked = await fetch(`${base}/api/tester/unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'jovi-2026' }) });
+    assert.equal(unlocked.status, 200);
+    const cookie = unlocked.headers.get('set-cookie').split(';')[0];
+    const response = await fetch(`${base}/api/subject-ai`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: SUBJECT_BODY });
+    assert.equal(response.status, 200);
+    const without = await fetch(`${base}/api/subject-ai`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: SUBJECT_BODY });
+    assert.equal(without.status, 401);
+  }, { JOVI_API_KEY: 'chave-certa', JOVI_LOCAL_DEV_BYPASS: 'false', JOVI_TESTER_KEY: 'k'.repeat(64), JOVI_TESTER_ACCESS_CODE: 'jovi-2026' });
+});

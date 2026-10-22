@@ -9,7 +9,10 @@ import videoRecommendations from '../api/video-recommendations.js';
 import authGoogle from '../api/auth/google.js';
 import me from '../api/me.js';
 import byokValidate from '../api/byok/validate.js';
+import testerUnlock from '../api/tester/unlock.js';
+import testerLock from '../api/tester/lock.js';
 import { hasValidApiKey, isJsonContentType } from '../api/_lib/http.js';
+import { hasValidTesterCookie } from '../api/_lib/tester.js';
 
 const POST_ROUTES = {
   '/api/analyze-image': analyzeImage,
@@ -19,7 +22,12 @@ const POST_ROUTES = {
   '/api/video-recommendations': videoRecommendations,
   '/api/auth/google': authGoogle,
   '/api/byok/validate': byokValidate,
+  '/api/tester/unlock': testerUnlock,
+  '/api/tester/lock': testerLock,
 };
+
+// Routes the web build calls before it has a tester cookie; they carry no API key.
+const NO_API_KEY_ROUTES = new Set(['/api/tester/unlock', '/api/tester/lock']);
 
 const GET_ROUTES = {
   '/api/me': me,
@@ -186,11 +194,12 @@ export function createLocalApiServer({ webUrl = process.env.JOVI_WEB_URL || 'htt
 
     // ip comes from the socket, not a spoofable header — used as the rate-limit key.
     const context = { method: request.method, headers: request.headers, url: request.url, ip: request.socket?.remoteAddress };
+    const authorized = hasValidApiKey(context) || hasValidTesterCookie(context) || NO_API_KEY_ROUTES.has(path);
     // A caller without the shared key is answered from headers alone: the
     // handler's guard replies 401/429 (and counts the failure) without anyone
     // making this server buffer and parse up to 11 MB first.
     try {
-      if (routeMethod === 'GET' || !hasValidApiKey(context)) {
+      if (routeMethod === 'GET' || !authorized) {
         if (routeMethod === 'POST') discardBody(request, response);
         await handler({ ...context, body: {}, rawBody: Buffer.alloc(0) }, createResponseAdapter(response));
         return;

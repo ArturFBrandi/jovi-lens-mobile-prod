@@ -120,9 +120,9 @@ An invalid or expired cookie is ignored, so the request continues down the norma
 there with `SIGN_IN_REQUIRED`, which the web app maps to the access screen.
 
 With `ctx.tester = true`, the guard **skips** session (7), the per-user burst limit (9),
-the BYOK requirement (10) and credit reservation (13). TTS and transcription use the **server**
-provider, the same as the local dev bypass. Idempotency (12) still runs, because it prevents double
-charges on retries. Because the cookie is `SameSite=Strict` and bound to the same origin, other sites
+the BYOK requirement (10), idempotency (12) and credit reservation (13). Nothing is charged, so
+there's nothing for idempotency to protect. TTS and transcription use the **server** provider, the
+same as the local dev bypass. Because the cookie is `SameSite=Strict` and bound to the same origin, other sites
 can't use it.
 
 **Safety rails.**

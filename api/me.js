@@ -11,7 +11,7 @@ export default defineRoute({
   integrity: false,
   cost: 0,
   byok: 'forbidden',
-  run: async (_input, ctx) => ({
+  run: async (_input, ctx) => (ctx.tester ? { tester: true } : {
     user: { id: ctx.user.sub, email: ctx.user.email },
     creditsRemaining: await getStore().getCredits(ctx.user.sub, freeCredits()),
     creditsTotal: freeCredits(),

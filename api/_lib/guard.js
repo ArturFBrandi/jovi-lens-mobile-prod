@@ -1,12 +1,13 @@
 // Request pipeline shared by every API route (prod-implementation-spec.md §4
 // and §5.3). Handlers declare what they need with defineRoute(); the guard
-// enforces method, body limits, API key, BYOK headers, session, integrity,
-// rate limits, idempotency and credits before calling `run`.
+// enforces method, body limits, API key, tester access, BYOK headers, session,
+// integrity, rate limits, idempotency and credits before calling `run`.
 import { createHash } from 'node:crypto';
 import { verifyIntegrity } from './attestation.js';
 import { errorBody, errorResponse, hasValidApiKey, ipKey, isJsonContentType, sessionUser } from './http.js';
 import { log, logError, userHash } from './log.js';
 import { getStore } from './store.js';
+import { hasValidTesterCookie, testerDailyCap } from './tester.js';
 import { getProviderByName } from './ai/providers/index.js';
 
 const MAX_BODY_BYTES = 4_000_000;
@@ -23,7 +24,11 @@ const REQUIRED_IN_PROD = [
   'GOOGLE_CLIENT_ID',
   'JOVI_SESSION_SECRET',
   'JOVI_API_KEY',
-  'JOVI_REQUIRE_INTEGRITY',
+];
+
+// Play Integrity is off for this release (prod-web-android-spec.md D8); its
+// variables are only required once JOVI_REQUIRE_INTEGRITY=true turns it on.
+const REQUIRED_WITH_INTEGRITY = [
   'PLAY_INTEGRITY_PROJECT_NUMBER',
   'PLAY_INTEGRITY_CERT_SHA256',
   'PLAY_INTEGRITY_SA_JSON_B64',
@@ -41,7 +46,8 @@ const PROVIDER_ENV = {
 
 export function missingRequiredEnv() {
   if (!process.env.VERCEL) return [];
-  const missing = REQUIRED_IN_PROD.filter((name) => !process.env[name]);
+  const required = process.env.JOVI_REQUIRE_INTEGRITY === 'true' ? [...REQUIRED_IN_PROD, ...REQUIRED_WITH_INTEGRITY] : REQUIRED_IN_PROD;
+  const missing = required.filter((name) => !process.env[name]);
   const provider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
   if (provider && !PROVIDER_ENV[provider]) missing.push(`AI_PROVIDER (desconhecido: ${provider})`);
   for (const options of PROVIDER_ENV[provider] || []) {
@@ -118,6 +124,7 @@ export function defineRoute({
   burstPerMinute,
   auth,
   integrity = false,
+  apiKey = true,
   cost = 0,
   byok = 'forbidden',
   byokCapability,
@@ -129,7 +136,7 @@ export function defineRoute({
     const route = routePath(req) || (typeof scope === 'string' ? scope : 'unknown');
     const reqId = req.headers?.['x-vercel-id'] ? String(req.headers['x-vercel-id']).slice(0, 120) : undefined;
     const ip = clientIp(req);
-    const ctx = { req, ip, user: null, byok: null, bypass: false, log: null };
+    const ctx = { req, res, ip, user: null, byok: null, bypass: false, tester: false, log: null };
     ctx.log = (event, fields = {}) => log(event, { route, reqId, userHash: userHash(ctx.user?.sub), ...fields });
 
     let reserved = false;
@@ -137,7 +144,7 @@ export function defineRoute({
     let store = null;
 
     const send = (status, payload) => {
-      log('request', { route, status, code: status >= 400 ? payload?.code : undefined, ms: Date.now() - started, reqId, userHash: userHash(ctx.user?.sub), byok: Boolean(ctx.byok) });
+      log('request', { route, status, code: status >= 400 ? payload?.code : undefined, ms: Date.now() - started, reqId, userHash: userHash(ctx.user?.sub), byok: Boolean(ctx.byok), tester: ctx.tester || undefined, ip: ctx.tester ? ip : undefined });
       return res.status(status).json(payload);
     };
     const fail = (code) => {
@@ -169,8 +176,12 @@ export function defineRoute({
 
       store = getStore();
 
+      // 4b. Web tester cookie (checked first: it stands in for the API key,
+      // which the web build does not carry).
+      ctx.tester = hasValidTesterCookie(req);
+
       // 4. API key. Only failures count toward the per-IP bucket.
-      if (process.env.JOVI_API_KEY && !hasValidApiKey(req)) {
+      if (apiKey && !ctx.tester && process.env.JOVI_API_KEY && !hasValidApiKey(req)) {
         const failures = await store.hit(rateKey('apikeyfail', ip, 60), 60);
         return fail(failures > API_KEY_FAIL_LIMIT ? 'RATE_LIMITED' : 'API_KEY_INVALID');
       }
@@ -189,9 +200,12 @@ export function defineRoute({
       // 6. Local-only dev bypass (keeps web/ working against the local server).
       ctx.bypass = devBypassActive();
       if (ctx.bypass) ctx.user = { sub: `dev:${ip}`, email: 'dev@local' };
+      else if (ctx.tester) ctx.user = { sub: 'tester:web', email: 'tester@web' };
+      // Both skip session, integrity, burst, the BYOK requirement and credits.
+      const unlimited = ctx.bypass || ctx.tester;
 
       // 7. Session.
-      if (auth === 'session' && !ctx.bypass) {
+      if (auth === 'session' && !unlimited) {
         const { provided, user } = sessionUser(req);
         if (!provided) return fail('SIGN_IN_REQUIRED');
         if (!user) return fail('SESSION_INVALID');
@@ -199,20 +213,25 @@ export function defineRoute({
       }
 
       // 8. Integrity.
-      if (integrity && !ctx.bypass && process.env.JOVI_REQUIRE_INTEGRITY === 'true') {
+      if (integrity && !unlimited && process.env.JOVI_REQUIRE_INTEGRITY === 'true') {
         const verdict = await verifyIntegrity(req, bodySha256);
         if (!verdict.ok) return fail('INTEGRITY_FAILED');
       }
 
       // 9. Burst limit per user (or per IP for unauthenticated routes). A route
       // may pick its bucket from the body (subject-ai gives "grade" its own).
-      const id = ctx.user?.sub ?? ip;
-      const bucket = typeof scope === 'function' ? scope(body) : scope;
-      const burstLimit = typeof burstPerMinute === 'function' ? burstPerMinute(body) : burstPerMinute;
-      if (await store.hit(rateKey(bucket, id, 60), 60) > burstLimit) return fail('RATE_LIMITED');
+      // Testers share one identity, so they get the global daily cap instead.
+      if (ctx.tester) {
+        if (auth === 'session' && method === 'POST' && await store.hit(rateKey('testerday', 'all', 86400), 86400) > testerDailyCap()) return fail('TESTER_CAP_REACHED');
+      } else {
+        const id = ctx.user?.sub ?? ip;
+        const bucket = typeof scope === 'function' ? scope(body) : scope;
+        const burstLimit = typeof burstPerMinute === 'function' ? burstPerMinute(body) : burstPerMinute;
+        if (await store.hit(rateKey(bucket, id, 60), 60) > burstLimit) return fail('RATE_LIMITED');
+      }
 
-      // 10. BYOK requirement.
-      if (byok === 'required' && !(ctx.bypass && !ctx.byok)) {
+      // 10. BYOK requirement (unlimited callers use the server provider).
+      if (byok === 'required' && !(unlimited && !ctx.byok)) {
         if (!ctx.byok) return fail('BYOK_REQUIRED');
         if (byokCapability && !getProviderByName(ctx.byok.provider).capabilities?.[byokCapability]) return fail('BYOK_CAPABILITY_UNSUPPORTED');
       }
@@ -228,7 +247,8 @@ export function defineRoute({
         input = validated.input;
       }
 
-      const charged = cost > 0 && !ctx.byok && !ctx.bypass;
+      const price = typeof cost === 'function' ? cost(body) : cost;
+      const charged = price > 0 && !ctx.byok && !unlimited;
 
       // 12. Idempotency.
       if (charged) {
@@ -263,7 +283,7 @@ export function defineRoute({
       if (reserved) {
         await store.set(idemKey, JSON.stringify(result), IDEMPOTENCY_TTL_SEC);
         res.setHeader('x-jovi-credits-remaining', String(remaining));
-      } else if (ctx.user && !ctx.byok && !ctx.bypass) {
+      } else if (ctx.user && !ctx.byok && !unlimited) {
         res.setHeader('x-jovi-credits-remaining', String(await store.getCredits(ctx.user.sub, freeCredits())));
       }
       return send(200, result);
@@ -280,7 +300,7 @@ export function defineRoute({
         }
       }
       const mapped = errorResponse({ code });
-      logError('route_error', { route, reqId, code: mapped.code, status: error?.status, byok: Boolean(ctx.byok), userHash: userHash(ctx.user?.sub) });
+      logError('route_error', { route, reqId, code: mapped.code, status: error?.status, byok: Boolean(ctx.byok), tester: ctx.tester || undefined, userHash: userHash(ctx.user?.sub) });
       return send(mapped.status, { code: mapped.code, message: mapped.message });
     }
   };

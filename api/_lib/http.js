@@ -8,8 +8,8 @@ import { verifySession } from './session.js';
 
 // Static shared-secret gate. A speed bump, not real authentication: the key
 // ships inside the app bundle, so anyone who extracts it can still call the
-// API directly. Google sign-in, Play Integrity and per-account credits are
-// the real controls (see prod-implementation-spec.md §4).
+// API directly. Google sign-in and per-account credits are the real controls
+// (see prod-web-android-spec.md §4.3).
 export function hasValidApiKey(req) {
   const expected = process.env.JOVI_API_KEY;
   if (!expected) return true; // unset = feature opt-in, same pattern as GOOGLE_CLIENT_ID
@@ -95,7 +95,8 @@ export const ERRORS = {
   SESSION_INVALID: { status: 401, message: 'Sua sessão expirou. Entre novamente.' },
   GOOGLE_TOKEN_INVALID: { status: 401, message: 'Token Google inválido para este aplicativo.' },
   GOOGLE_TOKEN_REUSED: { status: 401, message: 'Esta credencial Google já foi usada. Entre novamente.' },
-  CREDITS_EXHAUSTED: { status: 402, message: 'Você usou suas 3 análises gratuitas. Adicione sua própria chave de IA para continuar.' },
+  TESTER_CODE_INVALID: { status: 401, message: 'Código de acesso inválido.' },
+  CREDITS_EXHAUSTED: { status: 402, message: 'Você usou suas 3 interações gratuitas. Adicione sua própria chave de IA para continuar.' },
   INTEGRITY_FAILED: { status: 403, message: 'Não foi possível verificar este aparelho. Use o app oficial em um aparelho sem modificações.' },
   BYOK_REQUIRED: { status: 403, message: 'Vozes e transcrição da IA exigem sua própria chave. Usando a voz do aparelho.' },
   METHOD_NOT_ALLOWED: { status: 405, message: 'Método não permitido.' },
@@ -105,6 +106,7 @@ export const ERRORS = {
   BYOK_REJECTED: { status: 422, message: 'Sua chave de IA foi recusada pelo provedor. Confira ou troque a chave.' },
   RATE_LIMITED: { status: 429, message: 'Muitos pedidos em sequência. Tente novamente em instantes.' },
   SIGNUP_LIMITED: { status: 429, message: 'Muitas contas novas nesta rede hoje. Tente novamente amanhã.' },
+  TESTER_CAP_REACHED: { status: 429, message: 'Limite diário de testes atingido. Tente amanhã.' },
   AI_RATE_LIMITED: { status: 429, message: 'O serviço de IA está temporariamente ocupado. Tente novamente em instantes.' },
   AI_UNAVAILABLE: { status: 502, message: DEFAULT_MESSAGE },
   AI_PROVIDER_ERROR: { status: 502, message: DEFAULT_MESSAGE },

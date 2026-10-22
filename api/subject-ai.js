@@ -48,7 +48,9 @@ export default defineRoute({
   burstPerMinute: (body) => (body?.action === 'grade' ? 20 : 10),
   auth: 'session',
   integrity: true,
-  cost: 1,
+  // Grading answers is free (prod-web-android-spec.md D6); the "grade" burst
+  // bucket above keeps it from becoming a free general-purpose AI.
+  cost: (body) => (body?.action === 'grade' ? 0 : 1),
   byok: 'optional',
   validate: safeInput,
   run: (input, ctx) => runSubjectAI({ ...input, credentials: ctx.byok }),
