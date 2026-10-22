@@ -11,13 +11,13 @@ const DEFAULT_TTS_BASE_URL = 'https://api-uw.minimax.io';
 
 // speech-2.8-hd is MiniMax's current flagship TTS model as of this writing.
 // MiniMax's catalog moves fast, so override via env if this ages out.
-// Text-only calls (follow-up questions, subject content) use MiniMax-Text-01:
-// measured 2026-10-22, M3 and M2.x broke about half of their pt-BR replies
-// with mixed-in English/Chinese tokens ("realizationava", "fábrica de九江"),
-// while Text-01 gave 0/9 slips. Calls carrying an image keep M3, whose photo
-// analysis is far more detailed (Text-01 accepts images but is shallow).
+// MiniMax-Text-01 for everything, images included. Measured 2026-10-22: M3 and
+// M2.x break pt-BR answers with mixed-in Chinese/Korean/English tokens, about
+// half of text replies and most photos of dense notes ("industrialização也不例外
+// 推动ou"); Text-01 gave 0 slips on text and on 4 photos, at similar speed,
+// with shorter analyses. M3 stays selectable with MINIMAX_VISION_MODEL.
 const DEFAULT_CHAT_MODEL = 'MiniMax-Text-01';
-const DEFAULT_VISION_MODEL = 'MiniMax-M3';
+const DEFAULT_VISION_MODEL = 'MiniMax-Text-01';
 const DEFAULT_TTS_MODEL = 'speech-2.8-hd';
 
 // Confirmed live via /v1/get_voice against the account's own key — MiniMax's
@@ -115,7 +115,7 @@ async function repairForeignScript(config, text) {
   const instruction = 'O texto a seguir deveria estar todo em português do Brasil, mas contém algumas palavras em chinês, japonês ou coreano por erro. '
     + 'Substitua só essas palavras pelo equivalente correto em português, de acordo com o contexto. Não mude nada além disso: mantenha a mesma estrutura, as mesmas chaves e o restante do texto. '
     + 'Responda somente com o texto corrigido, sem comentários e sem markdown.\n\n';
-  const repaired = await chatCompletion(config, { model: config.chatModel, messages: [{ role: 'user', content: instruction + text }], maxTokens: 3200, timeoutMs: 20000 });
+  const repaired = await chatCompletion(config, { model: config.chatModel, messages: [{ role: 'user', content: instruction + text }], maxTokens: 3200, timeoutMs: 12000 });
   if (CJK.test(repaired)) return null;
   const wasJson = (() => { try { JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); return true; } catch { return false; } })();
   if (wasJson) {

@@ -37,11 +37,12 @@ function minimaxTest(name, fn) {
 
 const IMAGE_MESSAGES = [{ role: 'user', content: [{ type: 'text', text: 'Analise a imagem.' }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/' } }] }];
 
-minimaxTest('image calls use the vision model, text calls the text model', async () => {
-  const bodies = sequence('{"ok":true}', '{"ok":true}');
-  assert.equal((await complete({ messages: IMAGE_MESSAGES })).model, 'MiniMax-M3');
+minimaxTest('Text-01 by default; MINIMAX_VISION_MODEL picks the model for image calls', async () => {
+  const bodies = sequence('{"ok":true}', '{"ok":true}', '{"ok":true}');
+  assert.equal((await complete({ messages: IMAGE_MESSAGES })).model, 'MiniMax-Text-01');
   assert.equal((await complete({ messages: [{ role: 'user', content: 'Explique.' }] })).model, 'MiniMax-Text-01');
-  assert.deepEqual(bodies.map((body) => body.model), ['MiniMax-M3', 'MiniMax-Text-01']);
+  await withEnv({ MINIMAX_VISION_MODEL: 'MiniMax-M3' }, () => complete({ messages: IMAGE_MESSAGES }));
+  assert.deepEqual(bodies.map((body) => body.model), ['MiniMax-Text-01', 'MiniMax-Text-01', 'MiniMax-M3']);
 });
 
 minimaxTest('a clean answer is returned as is, with one call', async () => {
@@ -55,7 +56,6 @@ minimaxTest('a Chinese slip is repaired by the text model, keeping the JSON', as
   const bodies = sequence('{"summary":"Uma fábrica de九江 velas."}', '{"summary":"Uma fábrica de velas."}');
   const result = await complete({ messages: IMAGE_MESSAGES });
   assert.equal(result.text, '{"summary":"Uma fábrica de velas."}');
-  assert.equal(result.model, 'MiniMax-M3');
   assert.equal(bodies.length, 2);
   assert.equal(bodies[1].model, 'MiniMax-Text-01');
   assert.match(bodies[1].messages[0].content, /fábrica de九江 velas/);

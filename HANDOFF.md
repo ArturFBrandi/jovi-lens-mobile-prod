@@ -73,7 +73,7 @@ Secrets live only in the root `.env` locally (gitignored, CRLF line endings — 
 | `AI_PROVIDER` | `minimax` (D9) |
 | `MINIMAX_API_KEY` | Server AI key |
 | `MINIMAX_CHAT_MODEL` | Optional. Default `MiniMax-Text-01` (text-only calls) |
-| `MINIMAX_VISION_MODEL` | Optional. Default `MiniMax-M3` (calls with an image) |
+| `MINIMAX_VISION_MODEL` | Optional. Default `MiniMax-Text-01` (calls with an image). Do not use M3: see §8 |
 | `GOOGLE_CLIENT_ID` | The **Web** OAuth client ID (below). It is the audience of the Android id_token |
 | `JOVI_SESSION_SECRET` | Random, ≥ 32 chars. Signs app sessions |
 | `JOVI_API_KEY` | Shared app key the APK sends as `x-api-key` (must equal the APK's `EXPO_PUBLIC_JOVI_API_KEY`) |
@@ -183,10 +183,13 @@ The original checklist, for reference:
 - **Nothing may prompt for sign-in at launch.** `refreshCredits()` returns early without a session; a saved user without a
   session is renewed silently or cleared (`restoreSession`).
 - **`SmartImageSheet` accepted one question per photo** (`askingRef` never reset). Fixed (also broken on `main`).
-- **MiniMax quality:** MiniMax-M3 and all M2.x models break about half of pt-BR text replies with English/Chinese tokens
-  ("realizationava", "fábrica de九江"), at any temperature, with or without thinking. MiniMax-Text-01 gave 0/9 slips but is
-  shallow on photos (and ~30 s for subject content, within the 45 s limit). Hence the split: text → Text-01, image →
-  M3. M3 photo analyses looked clean in testing but were not measured at scale; watch for slips.
+- **MiniMax quality:** MiniMax-M3 and all M2.x models break pt-BR output with Chinese/Korean/English tokens
+  ("realizationava", "industrialização也不例外推动ou", "Revival Commitment"): about half of text replies and most photos of
+  dense notes, at any temperature, with or without thinking. MiniMax-Text-01 gave 0 slips on text and on photos
+  (including a dense handwritten page) and is now the default for both; its analyses are shorter, and a dense page
+  takes ~29 s (photo timeout raised to 45 s). As a safety net, an answer with CJK characters the request did not
+  contain is sent once to Text-01 to replace those words (`repairForeignScript` in `providers/minimax.js`). Stray
+  English words are not caught. A provider with better pt-BR vision (e.g. Gemini) would give richer analyses.
 - `public/index.html` must not exist: the Expo export copies `public/` and it would replace the app's page.
 - The web build must not send `x-api-key` (the local `EXPO_PUBLIC_JOVI_API_KEY` would leak into the bundle); web is
   authorized by the tester cookie.

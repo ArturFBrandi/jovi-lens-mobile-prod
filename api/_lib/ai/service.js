@@ -120,9 +120,11 @@ export async function runStudyAI({ action = 'analyze', question = '', context = 
   // (verbatim text + the full learning object) — a dense photo (a handwritten
   // page of notes, say) can easily need more than the 1400-token default sized
   // for lighter follow-up actions, and a truncated response is invalid JSON,
-  // not just short. Give vision calls a bigger budget and a bit more time.
+  // not just short. Give vision calls a bigger budget and more time: MiniMax-Text-01
+  // took ~29 s on a dense handwritten page (2026-10-22); 45 s + a 12 s repair
+  // stays under the 60 s function limit.
   const completion = imageDataUrl
-    ? await provider.complete({ messages: [{ role: 'user', content }], maxTokens: 3200, timeoutMs: 30000 })
+    ? await provider.complete({ messages: [{ role: 'user', content }], maxTokens: 3200, timeoutMs: 45000 })
     : await provider.complete({ messages: [{ role: 'user', content }] });
   const result = parseJson(completion.text);
   return action === 'analyze'
