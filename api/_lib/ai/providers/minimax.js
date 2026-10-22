@@ -68,12 +68,7 @@ function checkBaseResp(payload, message) {
   throw error;
 }
 
-export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, credentials }) {
-  const config = getConfig(credentials);
-  const hasImage = messages.some((message) => Array.isArray(message.content) && message.content.some((part) => part?.type === 'image_url'));
-  const model = hasImage ? config.visionModel : config.chatModel;
-  if (!isConfigured(hasImage ? 'vision' : 'chat', credentials)) throw notConfigured('MiniMax não está configurado.');
-
+async function chatCompletion(config, { model, messages, maxTokens, timeoutMs }) {
   const { controller, clear } = abortableTimeout(timeoutMs);
   try {
     const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
@@ -94,14 +89,54 @@ export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, 
 
     const text = payload?.choices?.[0]?.message?.content;
     if (!text || typeof text !== 'string') throw emptyResponseError('A IA não retornou conteúdo.');
-
-    return { text, model, provider: 'minimax' };
+    return text;
   } catch (error) {
     if (error?.name === 'AbortError') throw timeoutError('Tempo limite da análise excedido.');
     throw error;
   } finally {
     clear();
   }
+}
+
+// Han, kana and Hangul. MiniMax models (M3 for images, measured 2026-10-22)
+// sometimes drop a Chinese word into a pt-BR answer ("fábrica de九江").
+const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef]/;
+
+function messagesText(messages) {
+  return messages.map((message) => (Array.isArray(message.content)
+    ? message.content.map((part) => part?.text || '').join(' ')
+    : String(message.content || ''))).join(' ');
+}
+
+// Asks the text model (Text-01, clean pt-BR) to replace the slipped words,
+// keeping the JSON intact. Only used when a slip is detected, so clean
+// answers pay nothing. Returns null when the repair is unusable.
+async function repairForeignScript(config, text) {
+  const instruction = 'O texto a seguir deveria estar todo em português do Brasil, mas contém algumas palavras em chinês, japonês ou coreano por erro. '
+    + 'Substitua só essas palavras pelo equivalente correto em português, de acordo com o contexto. Não mude nada além disso: mantenha a mesma estrutura, as mesmas chaves e o restante do texto. '
+    + 'Responda somente com o texto corrigido, sem comentários e sem markdown.\n\n';
+  const repaired = await chatCompletion(config, { model: config.chatModel, messages: [{ role: 'user', content: instruction + text }], maxTokens: 3200, timeoutMs: 20000 });
+  if (CJK.test(repaired)) return null;
+  const wasJson = (() => { try { JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); return true; } catch { return false; } })();
+  if (wasJson) {
+    try { JSON.parse(repaired.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { return null; }
+  }
+  return repaired;
+}
+
+export async function complete({ messages, maxTokens = 1400, timeoutMs = 22000, credentials }) {
+  const config = getConfig(credentials);
+  const hasImage = messages.some((message) => Array.isArray(message.content) && message.content.some((part) => part?.type === 'image_url'));
+  const model = hasImage ? config.visionModel : config.chatModel;
+  if (!isConfigured(hasImage ? 'vision' : 'chat', credentials)) throw notConfigured('MiniMax não está configurado.');
+
+  const text = await chatCompletion(config, { model, messages, maxTokens, timeoutMs });
+  // A CJK word the request did not contain is a slip, not content to keep.
+  if (CJK.test(text) && !CJK.test(messagesText(messages))) {
+    const repaired = await repairForeignScript(config, text).catch(() => null);
+    if (repaired) return { text: repaired, model, provider: 'minimax' };
+  }
+  return { text, model, provider: 'minimax' };
 }
 
 // --- Text-to-speech (T2A v2) --------------------------------------------
