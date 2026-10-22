@@ -3,7 +3,9 @@
 Everything an agent needs to continue the production release from branch `prod_app`. Read this first, then
 `prod-web-android-spec.md` (the approved product spec, decisions D1–D9).
 
-Status on 2026-10-22: **M1–M4 done and tested; M5 (deploy) not started.** The Android flow was verified end to end on a
+Status on 2026-10-22: **M1–M4 done and tested; M5 deployed** — production is live at
+**https://jovi-lens-mobile-prod.vercel.app** (Vercel project `vaflo/jovi-lens-mobile-prod`, region `gru1`, Upstash Redis
+`jovi-lens-redis`, deployed from repo `ArturFBrandi/jovi-lens-mobile-prod` branch `prod_app`). Remaining M5 items: §6. The Android flow was verified end to end on a
 real phone (moto g42) against the local API; the web flow was verified in headless Chromium against the local API.
 
 ---
@@ -56,7 +58,7 @@ without `.js` on purpose; adding the extension makes Android bundle the web stub
 | M2 | `9e01fac` | Expo web export behind the access screen; `vercel.json`; local server can serve `dist/` |
 | M3 | `23864d7` | Android Google sign-in, credits UI, BYOK, out-of-credits dialog; device-test fixes (see §8); MiniMax model split |
 | M4 | (this commit) | No seed data in production builds, empty state on Hoje, demo wording removed from errors, consent-screen pages |
-| M5 | — | **Next.** See §6 |
+| M5 | (fork) | Vercel project, Upstash, env vars, production deploy, `eas.json` production URL. Open items in §6 |
 
 ## 4. Environment variables
 
@@ -119,7 +121,23 @@ To publish the consent screen (Branding page), after the deploy:
 **Before publishing:** `public/privacy.html` and `public/terms.html` contain the placeholder `CONTACT_EMAIL`. The owner
 must choose the public contact address; replace every occurrence, rebuild, redeploy.
 
-## 6. M5 — deploy (next steps)
+## 6. M5 — deploy
+
+**Done (2026-10-22), via the Vercel CLI from the fork folder:** project created and linked (`.vercel/`), Upstash Redis
+installed and connected (`KV_REST_API_*` injected), every §4.1 variable set for Production (tester key and session
+secret generated fresh; the access code was rotated once to prove revocation), production deployed. Verified on
+production: the three consent pages (200), SPA fallback, access screen in a browser (wrong code refused, `?acesso=`
+link unlocks and is stripped, all tabs render), a real MiniMax answer through the tester cookie (6 s), cookie flags
+`HttpOnly; SameSite=Strict; Secure`, Android path (`SIGN_IN_REQUIRED` without a session, `SESSION_INVALID` with a bad
+one), and that rotating `JOVI_TESTER_ACCESS_CODE` locks out the old cookie and the old code.
+
+**Still open:**
+- Git auto-deploy: Vercel could not connect the repo (its GitHub app has no access to the fork). Grant access in GitHub
+  → Settings → Applications → Vercel, then `vercel git connect` and set the production branch to `prod_app`. Until then
+  deploy with `npx vercel deploy --prod` from the fork folder.
+- APK against production (steps 5–6 below) and the consent screen.
+
+The original checklist, for reference:
 
 1. Fork the repo and import the fork into Vercel (framework: Other; `vercel.json` sets install/build/output and region
    `gru1`). Deploy branch `prod_app`.

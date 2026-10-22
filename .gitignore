@@ -26,3 +26,6 @@ yarn-error.*
 *.tsbuildinfo
 /ios
 /android
+.vercel
+.env*
+!.env.example
