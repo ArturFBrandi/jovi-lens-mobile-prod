@@ -82,7 +82,10 @@ function normalizeEvent(event) {
   };
 }
 
-export function normalizeStudyCalendar(calendar = {}) {
+// Accepts null: storage returns null until a calendar was ever saved (every new
+// production user), and a `= {}` default only covers undefined.
+export function normalizeStudyCalendar(input) {
+  const calendar = input && typeof input === 'object' ? input : {};
   const events = Array.isArray(calendar.events) ? calendar.events.map(normalizeEvent).filter(Boolean) : [];
   return {
     connected: Boolean(calendar.connected),

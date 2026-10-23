@@ -32,3 +32,14 @@ test('study calendar normalization drops invalid events and keeps valid exams so
   assert.equal(calendar.events.length, 2);
   assert.equal(nextEventForSubject(calendar, 'historia', new Date('2026-09-21T12:00:00-03:00')).title, 'Prova A');
 });
+
+// Regression: a new user has no saved calendar (storage returns null), and every
+// Estúdio da matéria action failed with "Cannot read properties of null (reading 'events')".
+test('normalizeStudyCalendar treats a missing (null) calendar as empty', () => {
+  for (const missing of [null, undefined, 'x']) {
+    const calendar = normalizeStudyCalendar(missing);
+    assert.deepEqual(calendar.events, []);
+    assert.equal(calendar.connected, false);
+  }
+  assert.deepEqual(eventsForSubject(null, 'História'), []);
+});
