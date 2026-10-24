@@ -526,5 +526,5 @@ shasum -a 256 "$APK"
 adb install -r "$APK"
 ```
 
-Related docs: `HANDOFF.md` (whole-project guide: backend, Vercel, OAuth, lessons learned), `ANDROID_BUILD.md`
+Related docs: `BUILD-APK-WINDOWS.md` (the same guide for Windows), `HANDOFF.md` (whole-project guide: backend, Vercel, OAuth, lessons learned), `ANDROID_BUILD.md`
 (Portuguese build guide written for WSL, plus device debugging), `eas.json` (variant variables).
