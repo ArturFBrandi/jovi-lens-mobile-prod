@@ -132,9 +132,10 @@ link unlocks and is stripped, all tabs render), a real MiniMax answer through th
 one), and that rotating `JOVI_TESTER_ACCESS_CODE` locks out the old cookie and the old code.
 
 **Still open:**
-- Git auto-deploy: Vercel could not connect the repo (its GitHub app has no access to the fork). Grant access in GitHub
-  → Settings → Applications → Vercel, then `vercel git connect` and set the production branch to `prod_app`. Until then
-  deploy with `npx vercel deploy --prod` from the fork folder.
+- ~~Git auto-deploy~~ **Done (2026-10-24):** the Vercel GitHub app is installed on the fork and the repo is connected
+  (`vercel git connect`); the production branch is `prod_app`. Every push to `prod_app` deploys production, other branches
+  get preview URLs, and pushes that only change Markdown are skipped (`ignoreCommand` in `vercel.json`).
+  `npx vercel deploy --prod` still works for a manual deploy.
 - APK against production (steps 5–6 below) and the consent screen.
 
 The original checklist, for reference:
