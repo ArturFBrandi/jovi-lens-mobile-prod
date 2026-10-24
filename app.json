@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.jovilens.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": [
         "android.permission.CAMERA"
       ],
